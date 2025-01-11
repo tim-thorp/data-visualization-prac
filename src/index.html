@@ -108,11 +108,11 @@
       <div class="legend">
         <div class="legend-item">
           <div class="legend-box legend-external"></div>
-          <span>External</span>
+          <span id="external-legend">External</span>
         </div>
         <div class="legend-item">
           <div class="legend-box legend-internal"></div>
-          <span>Internal (Avg)</span>
+          <span id="internal-legend">Internal</span>
         </div>
         <div class="legend-item">
           <div class="legend-box missing-data"></div>
@@ -137,31 +137,35 @@
 </div>
 
 <script>
+  // In pollutantConfig, add averaging period
   const pollutantConfig = {
     pm25: {
       external: "EXT_PM2.5",
       internal: ["PM2.5_DEVICE_1", "PM2.5_DEVICE_2", "PM2.5_DEVICE_3", "PM2.5_DEVICE_4", "PM2.5_DEVICE_5"],
       label: "PM2.5 (µg/m³)",
       title: "PM2.5 Concentration",
-      limits: { who: 10, eu: 25 }
+      limits: { who: 10, eu: 25 },
+      period: "24-hour"
     },
     pm10: {
       external: "EXT_PM10",
       internal: ["PM10_DEVICE_1", "PM10_DEVICE_2", "PM10_DEVICE_3", "PM10_DEVICE_4", "PM10_DEVICE_5"],
       label: "PM10 (µg/m³)",
       title: "PM10 Concentration",
-      limits: { who: 20, eu: 40 }
+      limits: { who: 20, eu: 40 },
+      period: "24-hour"
     },
     no2: {
       external: "EXT_NO2",
       internal: ["NO2_DEVICE_1", "NO2_DEVICE_2", "NO2_DEVICE_3", "NO2_DEVICE_4", "NO2_DEVICE_5"],
       label: "NO₂ (ppb)",
       title: "NO₂ Concentration",
-      limits: { who: 21 }
+      limits: { who: 21 },
+      period: "8-hour"
     }
   };
 
-  function createBarChart(svgId, processedData, yLabel) {
+  function createBarChart(svgId, processedData, yLabel, config) {
     // Clear previous chart
     d3.select("#" + svgId).selectAll("*").remove();
 
@@ -179,12 +183,12 @@
     const averages = [
       {
         type: "External",
-        value: d3.mean(processedData.map(d => d.external).filter(v => v !== null)),
+        value: d3.median(processedData.map(d => d.external).filter(v => v !== null)),
         color: "#4682b4"
       },
       {
         type: "Internal",
-        value: d3.mean(processedData.map(d => d.internal).filter(v => v !== null)),
+        value: d3.median(processedData.map(d => d.internal).filter(v => v !== null)),
         color: "#2ca02c"
       }
     ];
@@ -226,6 +230,11 @@
     svg.append("g")
             .call(d3.axisLeft(y));
 
+    // Add X axis
+    svg.append("g")
+            .attr("transform", `translate(0,${height})`)
+            .call(d3.axisBottom(x));
+
     // Add Y axis label
     svg.append("text")
             .attr("transform", "rotate(-90)")
@@ -242,12 +251,15 @@
             .attr("y", 0 - margin.top / 2)
             .attr("text-anchor", "middle")
             .style("font-size", "14px")
-            .text("Average Values");
+            .text(`Median Values (${config.period})`);
   }
 
-  function createLineChart(svgId, data, externalColumn, internalColumns, yLabel, chartTitle, limits) {
+  function createLineChart(svgId, data, externalColumn, internalColumns, yLabel, chartTitle, limits, config) {
     // Clear previous chart
     d3.select("#" + svgId).selectAll("*").remove();
+
+    // Update the chart title with the period
+    const fullChartTitle = `${chartTitle} (${config.period} rolling mean)`;
 
     const margin = {top: 40, right: 30, bottom: 50, left: 60};
     const width = 1000 - margin.left - margin.right;
@@ -261,40 +273,68 @@
 
     // Process data
     const processedData = data.map(d => {
-      // Get valid internal measurements
+      // First get median across devices for this timestamp
       const internalValues = internalColumns.map(col => {
         const val = d[col];
         return (val === '' || val === undefined || val === null) ? null : +val;
       }).filter(val => val !== null);
 
-      let internalAvg = null;
-      // Only proceed if we have at least 2 valid measurements
-      if (internalValues.length >= 2) {
-        // Sort values in descending order
-        const sortedValues = [...internalValues].sort((a, b) => b - a);
-
-        // Check if highest value is more than double the second highest
-        if (sortedValues[0] > sortedValues[1] * 2) {
-          // Remove the highest value and calculate mean of remaining values
-          sortedValues.shift();
-        }
-
-        // Calculate mean of remaining values
-        internalAvg = d3.mean(sortedValues);
-      }
-
       return {
         date: new Date(d['date_bin']),
         external: (d[externalColumn] === '' || d[externalColumn] === undefined || d[externalColumn] === null) ?
                 null : +d[externalColumn],
-        internal: internalAvg
+        internal: internalValues.length >= 2 ? d3.median(internalValues) : null
       };
-    })
-            .filter(d => d.date && !isNaN(d.date.getTime()))
+    }).filter(d => d.date && !isNaN(d.date.getTime()))
             .sort((a, b) => a.date - b.date);
 
+// Calculate rolling averages
+    const windowHours = config.period === '8-hour' ? 8 : 24; // 8 hours for NO2, 24 for PM
+    const windowMilliseconds = windowHours * 60 * 60 * 1000; // Convert hours to milliseconds
+
+    const rollingAverages = processedData.map((currentPoint, i) => {
+      const currentTime = currentPoint.date.getTime();
+      let windowStart = i;
+
+      // Find start of window by moving backwards until we're outside the time window
+      while (windowStart > 0 &&
+      (currentTime - processedData[windowStart - 1].date.getTime()) <= windowMilliseconds) {
+        windowStart--;
+      }
+
+      // Get window data
+      const windowData = processedData.slice(windowStart, i + 1);
+
+      // Calculate time coverage
+      const timeSpan = currentTime - windowData[0].date.getTime();
+      const coverage = timeSpan / windowMilliseconds;
+
+      // Calculate internal and external averages
+      const internal = windowData
+              .filter(d => d.internal !== null)
+              .map(d => d.internal);
+
+      const external = windowData
+              .filter(d => d.external !== null)
+              .map(d => d.external);
+
+      return {
+        date: currentPoint.date,
+        internal: coverage >= 0.75 && internal.length > 0 ?
+                d3.mean(internal) : null,
+        external: coverage >= 0.75 && external.length > 0 ?
+                d3.mean(external) : null
+      };
+    });
+
+    // Update legend text
+    document.getElementById('external-legend').textContent =
+            `External (${config.period} mean)`;
+    document.getElementById('internal-legend').textContent =
+            `Internal (device median, ${config.period} mean)`;
+
     // Create bar chart with the processed data
-    createBarChart("bar-chart", processedData, yLabel);
+    createBarChart("bar-chart", rollingAverages, yLabel, config);
 
     // Find gaps in data (where either external or internal data is missing)
     const gaps = [];
@@ -317,15 +357,15 @@
       gaps.push(currentGap);
     }
 
-    // Create scales
+    // Create scales using rolling averages
     const x = d3.scaleTime()
-            .domain(d3.extent(processedData, d => d.date))
+            .domain(d3.extent(rollingAverages, d => d.date))
             .range([0, width]);
 
     const y = d3.scaleLinear()
             .domain([0, Math.max(
-                    d3.max(processedData, d => d.external || 0),
-                    d3.max(processedData, d => d.internal || 0),
+                    d3.max(rollingAverages, d => d.external || 0),
+                    d3.max(rollingAverages, d => d.internal || 0),
                     limits?.who || 0,
                     limits?.eu || 0
             ) * 1.1])
@@ -356,15 +396,14 @@
 
     // Add the external line path
     svg.append("path")
-            .datum(processedData)
+            .datum(rollingAverages)
             .attr("fill", "none")
             .attr("stroke", "#4682b4")
             .attr("stroke-width", 1.5)
             .attr("d", externalLine);
 
-    // Add the internal line path
     svg.append("path")
-            .datum(processedData)
+            .datum(rollingAverages)
             .attr("fill", "none")
             .attr("stroke", "#2ca02c")
             .attr("stroke-width", 1.5)
@@ -397,7 +436,7 @@
             .attr("y", 0 - margin.top / 2)
             .attr("text-anchor", "middle")
             .style("font-size", "16px")
-            .text(chartTitle);
+            .text(fullChartTitle);
 
     // Add WHO guideline line last (top layer)
     if (limits?.who) {
@@ -455,7 +494,8 @@
                     config.internal,
                     config.label,
                     config.title,
-                    config.limits
+                    config.limits,
+                    config
             );
 
             // Set up toggle buttons
@@ -472,7 +512,8 @@
                       config.internal,
                       config.label,
                       config.title,
-                      config.limits
+                      config.limits,
+                      config
               );
             });
           })
