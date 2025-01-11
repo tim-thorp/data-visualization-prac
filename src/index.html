@@ -2,12 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>PM2.5 Trends</title>
+  <title>Air Pollutant Trends</title>
   <style>
     .container {
-      max-width: 800px;
+      max-width: 1200px;
       margin: 0 auto;
       padding: 20px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
     }
     .chart-container {
       border: 1px solid #ccc;
@@ -18,14 +23,20 @@
     h1 {
       color: #333;
       text-align: center;
+      margin-bottom: 30px;
     }
-    .missing-data-legend {
+    .legend {
       display: flex;
       align-items: center;
       justify-content: flex-end;
-      gap: 8px;
+      gap: 20px;
       margin-bottom: 10px;
       font-size: 12px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     .legend-box {
       width: 16px;
@@ -33,125 +44,245 @@
       background-color: #f5f5f5;
       border: 1px solid #ddd;
     }
+    .legend-line {
+      width: 16px;
+      height: 2px;
+    }
+    .who-line {
+      background-color: #ff9800;
+    }
+    .eu-line {
+      background-color: #f44336;
+    }
   </style>
   <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
 <div class="container">
-  <h1>External PM2.5 Trends Over Time</h1>
-  <div class="chart-container">
-    <div class="missing-data-legend">
-      <div class="legend-box"></div>
-      <span>Missing data</span>
+  <h1>External Air Pollutant Trends Over Time</h1>
+  <div class="grid">
+    <div class="chart-container">
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-box"></div>
+          <span>Missing data</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-line who-line"></div>
+          <span>WHO Guideline</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-line eu-line"></div>
+          <span>EU Limit</span>
+        </div>
+      </div>
+      <svg id="pm25-chart"></svg>
     </div>
-    <svg id="chart"></svg>
+    <div class="chart-container">
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-box"></div>
+          <span>Missing data</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-line who-line"></div>
+          <span>WHO Guideline</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-line eu-line"></div>
+          <span>EU Limit</span>
+        </div>
+      </div>
+      <svg id="pm10-chart"></svg>
+    </div>
+    <div class="chart-container">
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-box"></div>
+          <span>Missing data</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-line who-line"></div>
+          <span>WHO/EU Limit</span>
+        </div>
+      </div>
+      <svg id="no2-chart"></svg>
+    </div>
+    <div class="chart-container">
+      <div class="legend">
+        <div class="legend-item">
+          <div class="legend-box"></div>
+          <span>Missing data</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-line who-line"></div>
+          <span>WHO/EU Limit</span>
+        </div>
+      </div>
+      <svg id="co-chart"></svg>
+    </div>
   </div>
 </div>
 
 <script>
-  const margin = {top: 20, right: 30, bottom: 50, left: 60};
-  const width = 800 - margin.left - margin.right;
-  const height = 400 - margin.top - margin.bottom;
+  function createChart(svgId, data, valueColumn, yLabel, chartTitle, limits) {
+    const margin = {top: 40, right: 30, bottom: 50, left: 60};
+    const width = 550 - margin.left - margin.right;
+    const height = 300 - margin.top - margin.bottom;
 
-  const svg = d3.select("#chart")
-          .attr("width", width + margin.left + margin.right)
-          .attr("height", height + margin.top + margin.bottom)
-          .append("g")
-          .attr("transform", `translate(${margin.left},${margin.top})`);
+    const svg = d3.select("#" + svgId)
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
 
+    // Process data
+    const processedData = data.map(d => ({
+      date: new Date(d['date_bin']),
+      value: (d[valueColumn] === '' || d[valueColumn] === undefined || d[valueColumn] === null) ? null : +d[valueColumn]
+    }))
+            .filter(d => d.date && !isNaN(d.date.getTime()))
+            .sort((a, b) => a.date - b.date);
+
+    // Find gaps in data
+    const gaps = [];
+    let currentGap = null;
+
+    for (let i = 0; i < processedData.length; i++) {
+      if (processedData[i].value === null) {
+        if (!currentGap) {
+          currentGap = { start: processedData[i].date };
+        }
+      } else if (currentGap) {
+        currentGap.end = processedData[i].date;
+        gaps.push(currentGap);
+        currentGap = null;
+      }
+    }
+
+    if (currentGap) {
+      currentGap.end = processedData[processedData.length - 1].date;
+      gaps.push(currentGap);
+    }
+
+    // Create scales
+    const x = d3.scaleTime()
+            .domain(d3.extent(processedData, d => d.date))
+            .range([0, width]);
+
+    const y = d3.scaleLinear()
+            .domain([0, Math.max(d3.max(processedData, d => d.value || 0), limits.eu || limits.who) * 1.1])
+            .range([height, 0]);
+
+    // Add missing data background
+    svg.selectAll(".gap")
+            .data(gaps)
+            .enter()
+            .append("rect")
+            .attr("class", "gap")
+            .attr("x", d => x(d.start))
+            .attr("y", 0)
+            .attr("width", d => x(d.end) - x(d.start))
+            .attr("height", height)
+            .attr("fill", "#f5f5f5");
+
+    // Add WHO guideline line
+    if (limits.who) {
+      svg.append("line")
+              .attr("x1", 0)
+              .attr("x2", width)
+              .attr("y1", y(limits.who))
+              .attr("y2", y(limits.who))
+              .attr("stroke", "#ff9800")
+              .attr("stroke-width", 2)
+              .attr("stroke-dasharray", "5,5");
+
+      svg.append("text")
+              .attr("x", 5)
+              .attr("y", y(limits.who) - 5)
+              .attr("fill", "#ff9800")
+              .style("font-size", "12px")
+              .text("WHO");
+    }
+
+    // Add EU limit line
+    if (limits.eu && limits.eu !== limits.who) {
+      svg.append("line")
+              .attr("x1", 0)
+              .attr("x2", width)
+              .attr("y1", y(limits.eu))
+              .attr("y2", y(limits.eu))
+              .attr("stroke", "#f44336")
+              .attr("stroke-width", 2)
+              .attr("stroke-dasharray", "5,5");
+
+      svg.append("text")
+              .attr("x", 5)
+              .attr("y", y(limits.eu) - 5)
+              .attr("fill", "#f44336")
+              .style("font-size", "12px")
+              .text("EU");
+    }
+
+    // Create line generator
+    const line = d3.line()
+            .x(d => x(d.date))
+            .y(d => y(d.value))
+            .defined(d => d.value !== null);
+
+    // Add the line path
+    svg.append("path")
+            .datum(processedData)
+            .attr("fill", "none")
+            .attr("stroke", "steelblue")
+            .attr("stroke-width", 1.5)
+            .attr("d", line);
+
+    // Add X axis
+    svg.append("g")
+            .attr("transform", `translate(0,${height})`)
+            .call(d3.axisBottom(x))
+            .selectAll("text")
+            .style("text-anchor", "end")
+            .attr("transform", "rotate(-45)");
+
+    // Add Y axis
+    svg.append("g")
+            .call(d3.axisLeft(y));
+
+    // Add Y axis label
+    svg.append("text")
+            .attr("transform", "rotate(-90)")
+            .attr("y", 0 - margin.left)
+            .attr("x", 0 - (height / 2))
+            .attr("dy", "1em")
+            .style("text-anchor", "middle")
+            .text(yLabel);
+
+    // Add title
+    svg.append("text")
+            .attr("x", width / 2)
+            .attr("y", 0 - margin.top / 2)
+            .attr("text-anchor", "middle")
+            .style("font-size", "16px")
+            .text(chartTitle);
+  }
+
+  // Load data and create all charts
   d3.csv("all_devices_merged.csv")
           .then(function(data) {
-            // Process data
-            data = data.map(d => ({
-              date: new Date(d['date_bin']),
-              value: (d['EXT_PM2.5'] === '' || d['EXT_PM2.5'] === undefined || d['EXT_PM2.5'] === null) ? null : +d['EXT_PM2.5']
-            }))
-                    .filter(d => d.date && !isNaN(d.date.getTime())) // Keep only valid dates
-                    .sort((a, b) => a.date - b.date);
-
-            // Find gaps in data
-            const gaps = [];
-            let currentGap = null;
-
-            for (let i = 0; i < data.length; i++) {
-              if (data[i].value === null) {
-                if (!currentGap) {
-                  currentGap = {
-                    start: data[i].date
-                  };
-                }
-              } else if (currentGap) {
-                currentGap.end = data[i].date;
-                gaps.push(currentGap);
-                currentGap = null;
-              }
-            }
-
-            // Handle if last sequence was a gap
-            if (currentGap) {
-              currentGap.end = data[data.length - 1].date;
-              gaps.push(currentGap);
-            }
-
-            // Create scales
-            const x = d3.scaleTime()
-                    .domain(d3.extent(data, d => d.date))
-                    .range([0, width]);
-
-            const y = d3.scaleLinear()
-                    .domain([0, d3.max(data, d => d.value || 0)])
-                    .range([height, 0]);
-
-            // Add missing data background
-            svg.selectAll(".gap")
-                    .data(gaps)
-                    .enter()
-                    .append("rect")
-                    .attr("class", "gap")
-                    .attr("x", d => x(d.start))
-                    .attr("y", 0)
-                    .attr("width", d => x(d.end) - x(d.start))
-                    .attr("height", height)
-                    .attr("fill", "#f5f5f5");
-
-            // Create line generator
-            const line = d3.line()
-                    .x(d => x(d.date))
-                    .y(d => y(d.value))
-                    .defined(d => d.value !== null);
-
-            // Add the line path
-            svg.append("path")
-                    .datum(data)
-                    .attr("fill", "none")
-                    .attr("stroke", "steelblue")
-                    .attr("stroke-width", 1.5)
-                    .attr("d", line);
-
-            // Add X axis
-            svg.append("g")
-                    .attr("transform", `translate(0,${height})`)
-                    .call(d3.axisBottom(x))
-                    .selectAll("text")
-                    .style("text-anchor", "end")
-                    .attr("transform", "rotate(-45)");
-
-            // Add Y axis
-            svg.append("g")
-                    .call(d3.axisLeft(y));
-
-            // Add Y axis label
-            svg.append("text")
-                    .attr("transform", "rotate(-90)")
-                    .attr("y", 0 - margin.left)
-                    .attr("x", 0 - (height / 2))
-                    .attr("dy", "1em")
-                    .style("text-anchor", "middle")
-                    .text("PM2.5 (µg/m³)");
+            createChart("pm25-chart", data, "EXT_PM2.5", "PM2.5 (µg/m³)", "PM2.5 Concentration",
+                    { who: 10, eu: 25 });
+            createChart("pm10-chart", data, "EXT_PM10", "PM10 (µg/m³)", "PM10 Concentration",
+                    { who: 20, eu: 40 });
+            createChart("no2-chart", data, "EXT_NO2", "NO₂ (ppb)", "NO₂ Concentration",
+                    { who: 21 });  // WHO and EU have same limit
+            createChart("co-chart", data, "EXT_CO", "CO (ppm)", "CO Concentration",
+                    { who: 8.7 });  // WHO and EU have same limit
           })
           .catch(function(error) {
             console.error("Error loading the CSV:", error);
-            d3.select(".chart-container")
+            d3.selectAll(".chart-container")
                     .append("p")
                     .style("color", "red")
                     .text("Error loading data. Please check the console for details.");
