@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PM2.5 Trends</title>
+  <style>
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .chart-container {
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 20px;
+      background: white;
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+    }
+    .missing-data-legend {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+    .legend-box {
+      width: 16px;
+      height: 16px;
+      background-color: #f5f5f5;
+      border: 1px solid #ddd;
+    }
+  </style>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+<div class="container">
+  <h1>External PM2.5 Trends Over Time</h1>
+  <div class="chart-container">
+    <div class="missing-data-legend">
+      <div class="legend-box"></div>
+      <span>Missing data</span>
+    </div>
+    <svg id="chart"></svg>
+  </div>
+</div>
+
+<script>
+  const margin = {top: 20, right: 30, bottom: 50, left: 60};
+  const width = 800 - margin.left - margin.right;
+  const height = 400 - margin.top - margin.bottom;
+
+  const svg = d3.select("#chart")
+          .attr("width", width + margin.left + margin.right)
+          .attr("height", height + margin.top + margin.bottom)
+          .append("g")
+          .attr("transform", `translate(${margin.left},${margin.top})`);
+
+  d3.csv("all_devices_merged.csv")
+          .then(function(data) {
+            // Process data
+            data = data.map(d => ({
+              date: new Date(d['date_bin']),
+              value: (d['EXT_PM2.5'] === '' || d['EXT_PM2.5'] === undefined || d['EXT_PM2.5'] === null) ? null : +d['EXT_PM2.5']
+            }))
+                    .filter(d => d.date && !isNaN(d.date.getTime())) // Keep only valid dates
+                    .sort((a, b) => a.date - b.date);
+
+            // Find gaps in data
+            const gaps = [];
+            let currentGap = null;
+
+            for (let i = 0; i < data.length; i++) {
+              if (data[i].value === null) {
+                if (!currentGap) {
+                  currentGap = {
+                    start: data[i].date
+                  };
+                }
+              } else if (currentGap) {
+                currentGap.end = data[i].date;
+                gaps.push(currentGap);
+                currentGap = null;
+              }
+            }
+
+            // Handle if last sequence was a gap
+            if (currentGap) {
+              currentGap.end = data[data.length - 1].date;
+              gaps.push(currentGap);
+            }
+
+            // Create scales
+            const x = d3.scaleTime()
+                    .domain(d3.extent(data, d => d.date))
+                    .range([0, width]);
+
+            const y = d3.scaleLinear()
+                    .domain([0, d3.max(data, d => d.value || 0)])
+                    .range([height, 0]);
+
+            // Add missing data background
+            svg.selectAll(".gap")
+                    .data(gaps)
+                    .enter()
+                    .append("rect")
+                    .attr("class", "gap")
+                    .attr("x", d => x(d.start))
+                    .attr("y", 0)
+                    .attr("width", d => x(d.end) - x(d.start))
+                    .attr("height", height)
+                    .attr("fill", "#f5f5f5");
+
+            // Create line generator
+            const line = d3.line()
+                    .x(d => x(d.date))
+                    .y(d => y(d.value))
+                    .defined(d => d.value !== null);
+
+            // Add the line path
+            svg.append("path")
+                    .datum(data)
+                    .attr("fill", "none")
+                    .attr("stroke", "steelblue")
+                    .attr("stroke-width", 1.5)
+                    .attr("d", line);
+
+            // Add X axis
+            svg.append("g")
+                    .attr("transform", `translate(0,${height})`)
+                    .call(d3.axisBottom(x))
+                    .selectAll("text")
+                    .style("text-anchor", "end")
+                    .attr("transform", "rotate(-45)");
+
+            // Add Y axis
+            svg.append("g")
+                    .call(d3.axisLeft(y));
+
+            // Add Y axis label
+            svg.append("text")
+                    .attr("transform", "rotate(-90)")
+                    .attr("y", 0 - margin.left)
+                    .attr("x", 0 - (height / 2))
+                    .attr("dy", "1em")
+                    .style("text-anchor", "middle")
+                    .text("PM2.5 (µg/m³)");
+          })
+          .catch(function(error) {
+            console.error("Error loading the CSV:", error);
+            d3.select(".chart-container")
+                    .append("p")
+                    .style("color", "red")
+                    .text("Error loading data. Please check the console for details.");
+          });
+</script>
+</body>
+</html>
