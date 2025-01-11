@@ -2,23 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Air Pollutant Trends</title>
+  <title>Internal vs External Air Quality Comparison</title>
   <style>
     .container {
       max-width: 1200px;
       margin: 0 auto;
       padding: 20px;
     }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 20px;
-    }
     .chart-container {
       border: 1px solid #ccc;
       border-radius: 8px;
       padding: 20px;
       background: white;
+      margin-top: 20px;
     }
     h1 {
       color: #333;
@@ -41,8 +37,12 @@
     .legend-box {
       width: 16px;
       height: 16px;
-      background-color: #f5f5f5;
-      border: 1px solid #ddd;
+    }
+    .legend-external {
+      background-color: #4682b4;
+    }
+    .legend-internal {
+      background-color: #2ca02c;
     }
     .legend-line {
       width: 16px;
@@ -54,81 +54,105 @@
     .eu-line {
       background-color: #f44336;
     }
+    .missing-data {
+      background-color: #f5f5f5;
+      border: 1px solid #ddd;
+    }
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .control-button {
+      padding: 8px 16px;
+      border: 2px solid #ccc;
+      border-radius: 4px;
+      background: white;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+    .control-button:hover {
+      background: #f0f0f0;
+    }
+    .control-button.active {
+      border-color: #4682b4;
+      background: #4682b4;
+      color: white;
+    }
   </style>
   <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
 <div class="container">
-  <h1>External Air Pollutant Trends Over Time</h1>
-  <div class="grid">
-    <div class="chart-container">
-      <div class="legend">
-        <div class="legend-item">
-          <div class="legend-box"></div>
-          <span>Missing data</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-line who-line"></div>
-          <span>WHO Guideline</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-line eu-line"></div>
-          <span>EU Limit</span>
-        </div>
+  <h1>Internal vs External Air Quality Comparison</h1>
+
+  <div class="controls">
+    <button class="control-button active" data-pollutant="pm25">PM2.5</button>
+    <button class="control-button" data-pollutant="pm10">PM10</button>
+    <button class="control-button" data-pollutant="no2">NO₂</button>
+  </div>
+
+  <div class="chart-container">
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-box legend-external"></div>
+        <span>External</span>
       </div>
-      <svg id="pm25-chart"></svg>
-    </div>
-    <div class="chart-container">
-      <div class="legend">
-        <div class="legend-item">
-          <div class="legend-box"></div>
-          <span>Missing data</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-line who-line"></div>
-          <span>WHO Guideline</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-line eu-line"></div>
-          <span>EU Limit</span>
-        </div>
+      <div class="legend-item">
+        <div class="legend-box legend-internal"></div>
+        <span>Internal (Avg)</span>
       </div>
-      <svg id="pm10-chart"></svg>
-    </div>
-    <div class="chart-container">
-      <div class="legend">
-        <div class="legend-item">
-          <div class="legend-box"></div>
-          <span>Missing data</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-line who-line"></div>
-          <span>WHO/EU Limit</span>
-        </div>
+      <div class="legend-item">
+        <div class="legend-box missing-data"></div>
+        <span>Missing data</span>
       </div>
-      <svg id="no2-chart"></svg>
-    </div>
-    <div class="chart-container">
-      <div class="legend">
-        <div class="legend-item">
-          <div class="legend-box"></div>
-          <span>Missing data</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-line who-line"></div>
-          <span>WHO/EU Limit</span>
-        </div>
+      <div class="legend-item">
+        <div class="legend-line who-line"></div>
+        <span>WHO</span>
       </div>
-      <svg id="co-chart"></svg>
+      <div class="legend-item">
+        <div class="legend-line eu-line"></div>
+        <span>EU</span>
+      </div>
     </div>
+    <svg id="main-chart"></svg>
   </div>
 </div>
 
 <script>
-  function createChart(svgId, data, valueColumn, yLabel, chartTitle, limits) {
+  const pollutantConfig = {
+    pm25: {
+      external: "EXT_PM2.5",
+      internal: ["PM2.5_DEVICE_1", "PM2.5_DEVICE_2", "PM2.5_DEVICE_3", "PM2.5_DEVICE_4", "PM2.5_DEVICE_5"],
+      label: "PM2.5 (µg/m³)",
+      title: "PM2.5 Concentration",
+      limits: { who: 10, eu: 25 }
+    },
+    pm10: {
+      external: "EXT_PM10",
+      internal: ["PM10_DEVICE_1", "PM10_DEVICE_2", "PM10_DEVICE_3", "PM10_DEVICE_4", "PM10_DEVICE_5"],
+      label: "PM10 (µg/m³)",
+      title: "PM10 Concentration",
+      limits: { who: 20, eu: 40 }
+    },
+    no2: {
+      external: "EXT_NO2",
+      internal: ["NO2_DEVICE_1", "NO2_DEVICE_2", "NO2_DEVICE_3", "NO2_DEVICE_4", "NO2_DEVICE_5"],
+      label: "NO₂ (ppb)",
+      title: "NO₂ Concentration",
+      limits: { who: 21 }
+    }
+  };
+
+  function createChart(svgId, data, externalColumn, internalColumns, yLabel, chartTitle, limits) {
+    // Clear previous chart
+    d3.select("#" + svgId).selectAll("*").remove();
+
     const margin = {top: 40, right: 30, bottom: 50, left: 60};
-    const width = 550 - margin.left - margin.right;
-    const height = 300 - margin.top - margin.bottom;
+    const width = 1100 - margin.left - margin.right;
+    const height = 500 - margin.top - margin.bottom;
 
     const svg = d3.select("#" + svgId)
             .attr("width", width + margin.left + margin.right)
@@ -137,19 +161,45 @@
             .attr("transform", `translate(${margin.left},${margin.top})`);
 
     // Process data
-    const processedData = data.map(d => ({
-      date: new Date(d['date_bin']),
-      value: (d[valueColumn] === '' || d[valueColumn] === undefined || d[valueColumn] === null) ? null : +d[valueColumn]
-    }))
+    const processedData = data.map(d => {
+      // Get valid internal measurements
+      const internalValues = internalColumns.map(col => {
+        const val = d[col];
+        return (val === '' || val === undefined || val === null) ? null : +val;
+      }).filter(val => val !== null);
+
+      let internalAvg = null;
+      // Only proceed if we have at least 2 valid measurements
+      if (internalValues.length >= 2) {
+        // Sort values in descending order
+        const sortedValues = [...internalValues].sort((a, b) => b - a);
+
+        // Check if highest value is more than double the second highest
+        if (sortedValues[0] > sortedValues[1] * 2) {
+          // Remove the highest value and calculate mean of remaining values
+          sortedValues.shift();
+        }
+
+        // Calculate mean of remaining values
+        internalAvg = d3.mean(sortedValues);
+      }
+
+      return {
+        date: new Date(d['date_bin']),
+        external: (d[externalColumn] === '' || d[externalColumn] === undefined || d[externalColumn] === null) ?
+                null : +d[externalColumn],
+        internal: internalAvg
+      };
+    })
             .filter(d => d.date && !isNaN(d.date.getTime()))
             .sort((a, b) => a.date - b.date);
 
-    // Find gaps in data
+    // Find gaps in data (where either external or internal data is missing)
     const gaps = [];
     let currentGap = null;
 
     for (let i = 0; i < processedData.length; i++) {
-      if (processedData[i].value === null) {
+      if (processedData[i].external === null || processedData[i].internal === null) {
         if (!currentGap) {
           currentGap = { start: processedData[i].date };
         }
@@ -171,10 +221,15 @@
             .range([0, width]);
 
     const y = d3.scaleLinear()
-            .domain([0, Math.max(d3.max(processedData, d => d.value || 0), limits.eu || limits.who) * 1.1])
+            .domain([0, Math.max(
+                    d3.max(processedData, d => d.external || 0),
+                    d3.max(processedData, d => d.internal || 0),
+                    limits?.who || 0,
+                    limits?.eu || 0
+            ) * 1.1])
             .range([height, 0]);
 
-    // Add missing data background
+    // Add missing data background first (bottom layer)
     svg.selectAll(".gap")
             .data(gaps)
             .enter()
@@ -186,57 +241,32 @@
             .attr("height", height)
             .attr("fill", "#f5f5f5");
 
-    // Add WHO guideline line
-    if (limits.who) {
-      svg.append("line")
-              .attr("x1", 0)
-              .attr("x2", width)
-              .attr("y1", y(limits.who))
-              .attr("y2", y(limits.who))
-              .attr("stroke", "#ff9800")
-              .attr("stroke-width", 2)
-              .attr("stroke-dasharray", "5,5");
-
-      svg.append("text")
-              .attr("x", 5)
-              .attr("y", y(limits.who) - 5)
-              .attr("fill", "#ff9800")
-              .style("font-size", "12px")
-              .text("WHO");
-    }
-
-    // Add EU limit line
-    if (limits.eu && limits.eu !== limits.who) {
-      svg.append("line")
-              .attr("x1", 0)
-              .attr("x2", width)
-              .attr("y1", y(limits.eu))
-              .attr("y2", y(limits.eu))
-              .attr("stroke", "#f44336")
-              .attr("stroke-width", 2)
-              .attr("stroke-dasharray", "5,5");
-
-      svg.append("text")
-              .attr("x", 5)
-              .attr("y", y(limits.eu) - 5)
-              .attr("fill", "#f44336")
-              .style("font-size", "12px")
-              .text("EU");
-    }
-
-    // Create line generator
-    const line = d3.line()
+    // Create line generators
+    const externalLine = d3.line()
             .x(d => x(d.date))
-            .y(d => y(d.value))
-            .defined(d => d.value !== null);
+            .y(d => y(d.external))
+            .defined(d => d.external !== null);
 
-    // Add the line path
+    const internalLine = d3.line()
+            .x(d => x(d.date))
+            .y(d => y(d.internal))
+            .defined(d => d.internal !== null);
+
+    // Add the external line path
     svg.append("path")
             .datum(processedData)
             .attr("fill", "none")
-            .attr("stroke", "steelblue")
+            .attr("stroke", "#4682b4")
             .attr("stroke-width", 1.5)
-            .attr("d", line);
+            .attr("d", externalLine);
+
+    // Add the internal line path
+    svg.append("path")
+            .datum(processedData)
+            .attr("fill", "none")
+            .attr("stroke", "#2ca02c")
+            .attr("stroke-width", 1.5)
+            .attr("d", internalLine);
 
     // Add X axis
     svg.append("g")
@@ -266,23 +296,87 @@
             .attr("text-anchor", "middle")
             .style("font-size", "16px")
             .text(chartTitle);
+
+    // Add WHO guideline line last (top layer)
+    if (limits?.who) {
+      // Create a group for WHO elements
+      const whoGroup = svg.append("g");
+
+      whoGroup.append("line")
+              .attr("x1", 0)
+              .attr("x2", width)
+              .attr("y1", y(limits.who))
+              .attr("y2", y(limits.who))
+              .attr("stroke", "#ff9800")
+              .attr("stroke-width", 2)
+              .attr("stroke-dasharray", "5,5");
+
+      whoGroup.append("text")
+              .attr("x", 5)
+              .attr("y", y(limits.who) - 5)
+              .attr("fill", "#ff9800")
+              .style("font-size", "12px")
+              .text("WHO");
+    }
+
+    // Add EU limit line last (top layer)
+    if (limits?.eu && limits.eu !== limits.who) {
+      // Create a group for EU elements
+      const euGroup = svg.append("g");
+
+      euGroup.append("line")
+              .attr("x1", 0)
+              .attr("x2", width)
+              .attr("y1", y(limits.eu))
+              .attr("y2", y(limits.eu))
+              .attr("stroke", "#f44336")
+              .attr("stroke-width", 2)
+              .attr("stroke-dasharray", "5,5");
+
+      euGroup.append("text")
+              .attr("x", 5)
+              .attr("y", y(limits.eu) - 5)
+              .attr("fill", "#f44336")
+              .style("font-size", "12px")
+              .text("EU");
+    }
   }
 
-  // Load data and create all charts
+  // Load data and set up toggle functionality
   d3.csv("all_devices_merged.csv")
           .then(function(data) {
-            createChart("pm25-chart", data, "EXT_PM2.5", "PM2.5 (µg/m³)", "PM2.5 Concentration",
-                    { who: 10, eu: 25 });
-            createChart("pm10-chart", data, "EXT_PM10", "PM10 (µg/m³)", "PM10 Concentration",
-                    { who: 20, eu: 40 });
-            createChart("no2-chart", data, "EXT_NO2", "NO₂ (ppb)", "NO₂ Concentration",
-                    { who: 21 });  // WHO and EU have same limit
-            createChart("co-chart", data, "EXT_CO", "CO (ppm)", "CO Concentration",
-                    { who: 8.7 });  // WHO and EU have same limit
+            // Initial chart
+            const initialPollutant = "pm25";
+            const config = pollutantConfig[initialPollutant];
+            createChart("main-chart", data,
+                    config.external,
+                    config.internal,
+                    config.label,
+                    config.title,
+                    config.limits
+            );
+
+            // Set up toggle buttons
+            d3.selectAll(".control-button").on("click", function() {
+              // Update button styles
+              d3.selectAll(".control-button").classed("active", false);
+              d3.select(this).classed("active", true);
+
+              // Get selected pollutant and create new chart
+              const pollutant = this.getAttribute("data-pollutant");
+              const config = pollutantConfig[pollutant];
+              createChart("main-chart", data,
+                      config.external,
+                      config.internal,
+                      config.label,
+                      config.title,
+                      config.limits
+              );
+            });
           })
           .catch(function(error) {
             console.error("Error loading the CSV:", error);
-            d3.selectAll(".chart-container")
+            d3.select(".chart-container")
                     .append("p")
                     .style("color", "red")
                     .text("Error loading data. Please check the console for details.");
