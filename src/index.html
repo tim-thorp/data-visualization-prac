@@ -340,20 +340,20 @@
     const gaps = [];
     let currentGap = null;
 
-    for (let i = 0; i < processedData.length; i++) {
-      if (processedData[i].external === null || processedData[i].internal === null) {
+    for (let i = 0; i < rollingAverages.length; i++) {
+      if (rollingAverages[i].external === null || rollingAverages[i].internal === null) {
         if (!currentGap) {
-          currentGap = { start: processedData[i].date };
+          currentGap = { start: rollingAverages[i].date };
         }
       } else if (currentGap) {
-        currentGap.end = processedData[i].date;
+        currentGap.end = rollingAverages[i].date;
         gaps.push(currentGap);
         currentGap = null;
       }
     }
 
     if (currentGap) {
-      currentGap.end = processedData[processedData.length - 1].date;
+      currentGap.end = rollingAverages[rollingAverages.length - 1].date;
       gaps.push(currentGap);
     }
 
