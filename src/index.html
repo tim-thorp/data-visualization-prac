@@ -512,17 +512,6 @@
     }
   }
 
-  // Add these helper functions for the violin plot
-  function kernelDensityEstimator(kernel, X) {
-    return function(V) {
-      return X.map(x => [x, d3.mean(V, v => kernel(x - v))]);
-    };
-  }
-
-  function kernelEpanechnikov(bandwidth) {
-    return x => Math.abs(x /= bandwidth) <= 1 ? 0.75 * (1 - x * x) / bandwidth : 0;
-  }
-
   function createViolinBoxPlot(data, config) {
     const margin = {top: 40, right: 60, bottom: 70, left: 80};
     const width = 1000 - margin.left - margin.right;
@@ -669,7 +658,6 @@
       const q1 = d3.quantile(values, 0.25);
       const median = d3.quantile(values, 0.5);
       const q3 = d3.quantile(values, 0.75);
-      const iqr = q3 - q1;
       const min = d3.min(values);
       const max = d3.max(values);
 
