@@ -44,20 +44,10 @@
       height: 16px;
     }
     .legend-external {
-      background-color: #4682b4;
+      background-color: #1b9e77;
     }
     .legend-internal {
-      background-color: #2ca02c;
-    }
-    .legend-line {
-      width: 16px;
-      height: 2px;
-    }
-    .who-line {
-      background-color: #ff9800;
-    }
-    .eu-line {
-      background-color: #f44336;
+      background-color: #7570b3;
     }
     .missing-data {
       background-color: #f5f5f5;
@@ -82,8 +72,8 @@
       background: #f0f0f0;
     }
     .control-button.active {
-      border-color: #4682b4;
-      background: #4682b4;
+      border-color: #1b9e77;
+      background: #1b9e77;
       color: white;
     }
     .bar-label {
@@ -118,14 +108,6 @@
           <div class="legend-box missing-data"></div>
           <span>Missing data</span>
         </div>
-        <div class="legend-item">
-          <div class="legend-line who-line"></div>
-          <span>WHO</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-line eu-line"></div>
-          <span>EU</span>
-        </div>
       </div>
       <svg id="main-chart"></svg>
     </div>
@@ -144,7 +126,7 @@
       internal: ["PM2.5_DEVICE_1", "PM2.5_DEVICE_2", "PM2.5_DEVICE_3", "PM2.5_DEVICE_4", "PM2.5_DEVICE_5"],
       label: "PM2.5 (µg/m³)",
       title: "PM2.5 Concentration",
-      limits: { who: 10, eu: 25, who_yearly: 5 },
+      limits: { who: 15, who_yearly: 5 },  // Updated from who: 10, removed EU limit
       period: "24-hour"
     },
     pm10: {
@@ -152,20 +134,20 @@
       internal: ["PM10_DEVICE_1", "PM10_DEVICE_2", "PM10_DEVICE_3", "PM10_DEVICE_4", "PM10_DEVICE_5"],
       label: "PM10 (µg/m³)",
       title: "PM10 Concentration",
-      limits: { who: 20, eu: 40, who_yearly: 15 },
+      limits: { who: 45, who_yearly: 15 },  // Updated from who: 20, removed EU limit
       period: "24-hour"
     },
     no2: {
       external: "EXT_NO2",
       internal: ["NO2_DEVICE_1", "NO2_DEVICE_2", "NO2_DEVICE_3", "NO2_DEVICE_4", "NO2_DEVICE_5"],
-      label: "NO₂ (ppb)",
+      label: "NO₂ (µg/m³)",  // Changed from ppb
       title: "NO₂ Concentration",
-      limits: { who: 21, who_yearly: 10 },
-      period: "8-hour"
+      limits: { who: 25, who_yearly: 10 },  // Updated from who: 21
+      period: "24-hour"  // Changed from 8-hour
     }
   };
 
-  function createBarChart(svgId, processedData, yLabel, config) {
+  function createBarChart(svgId, processedData, yLabel, config, maxValue) {
     // Clear previous chart
     d3.select("#" + svgId).selectAll("*").remove();
 
@@ -183,13 +165,13 @@
     const averages = [
       {
         type: "External",
-        value: d3.median(processedData.map(d => d.external).filter(v => v !== null)),
-        color: "#4682b4"
+        value: d3.mean(processedData.map(d => d.external).filter(v => v !== null)),
+        color: "#1b9e77"
       },
       {
         type: "Internal",
-        value: d3.median(processedData.map(d => d.internal).filter(v => v !== null)),
-        color: "#2ca02c"
+        value: d3.mean(processedData.map(d => d.internal).filter(v => v !== null)),
+        color: "#7570b3"
       }
     ];
 
@@ -200,10 +182,7 @@
             .padding(0.3);
 
     const y = d3.scaleLinear()
-            .domain([0, Math.max(
-                    d3.max(averages, d => d.value),
-                    config.limits?.who_yearly || 0
-            ) * 1.2])  // Increased padding to 1.2 to make room for label
+            .domain([0, maxValue])
             .range([height, 0]);
 
     // Add bars
@@ -254,7 +233,7 @@
             .attr("y", 0 - margin.top / 2)
             .attr("text-anchor", "middle")
             .style("font-size", "14px")
-            .text(`Median Values (${config.period})`);
+            .text(`Mean Values`);
 
     if (config.limits?.who_yearly) {
       // Add the horizontal line
@@ -263,7 +242,7 @@
               .attr("x2", width)
               .attr("y1", y(config.limits.who_yearly))
               .attr("y2", y(config.limits.who_yearly))
-              .attr("stroke", "#ff9800")
+              .attr("stroke", "#d95f02")
               .attr("stroke-width", 2)
               .attr("stroke-dasharray", "5,5");
 
@@ -272,9 +251,9 @@
               .attr("x", width/2)
               .attr("y", y(config.limits.who_yearly) - 5)
               .attr("text-anchor", "middle")
-              .attr("fill", "#ff9800")
+              .attr("fill", "#d95f02")
               .style("font-size", "12px")
-              .text(`WHO yearly limit (${config.limits.who_yearly})`);
+              .text(`WHO annual limit`);
     }
   }
 
@@ -351,14 +330,19 @@
       };
     });
 
+    // Calculate max value for both charts
+    const maxValue = Math.max(
+            d3.max(rollingAverages, d => d.external || 0),
+            d3.max(rollingAverages, d => d.internal || 0),
+            limits?.who || 0
+    ) * 1.1;
+
     // Update legend text
-    document.getElementById('external-legend').textContent =
-            `External (${config.period} mean)`;
-    document.getElementById('internal-legend').textContent =
-            `Internal (device median, ${config.period} mean)`;
+    document.getElementById('external-legend').textContent = `External`;
+    document.getElementById('internal-legend').textContent = `Internal`;
 
     // Create bar chart with the processed data
-    createBarChart("bar-chart", rollingAverages, yLabel, config);
+    createBarChart("bar-chart", rollingAverages, yLabel, config, maxValue);
 
     // Find gaps in data (where either external or internal data is missing)
     const gaps = [];
@@ -387,12 +371,7 @@
             .range([0, width]);
 
     const y = d3.scaleLinear()
-            .domain([0, Math.max(
-                    d3.max(rollingAverages, d => d.external || 0),
-                    d3.max(rollingAverages, d => d.internal || 0),
-                    limits?.who || 0,
-                    limits?.eu || 0
-            ) * 1.1])
+            .domain([0, maxValue])
             .range([height, 0]);
 
     // Add missing data background first (bottom layer)
@@ -422,14 +401,14 @@
     svg.append("path")
             .datum(rollingAverages)
             .attr("fill", "none")
-            .attr("stroke", "#4682b4")
+            .attr("stroke", "#1b9e77")
             .attr("stroke-width", 1.5)
             .attr("d", externalLine);
 
     svg.append("path")
             .datum(rollingAverages)
             .attr("fill", "none")
-            .attr("stroke", "#2ca02c")
+            .attr("stroke", "#7570b3")
             .attr("stroke-width", 1.5)
             .attr("d", internalLine);
 
@@ -472,38 +451,16 @@
               .attr("x2", width)
               .attr("y1", y(limits.who))
               .attr("y2", y(limits.who))
-              .attr("stroke", "#ff9800")
+              .attr("stroke", "#d95f02")
               .attr("stroke-width", 2)
               .attr("stroke-dasharray", "5,5");
 
       whoGroup.append("text")
               .attr("x", 5)
               .attr("y", y(limits.who) - 5)
-              .attr("fill", "#ff9800")
+              .attr("fill", "#d95f02")
               .style("font-size", "12px")
-              .text("WHO");
-    }
-
-    // Add EU limit line last (top layer)
-    if (limits?.eu && limits.eu !== limits.who) {
-      // Create a group for EU elements
-      const euGroup = svg.append("g");
-
-      euGroup.append("line")
-              .attr("x1", 0)
-              .attr("x2", width)
-              .attr("y1", y(limits.eu))
-              .attr("y2", y(limits.eu))
-              .attr("stroke", "#f44336")
-              .attr("stroke-width", 2)
-              .attr("stroke-dasharray", "5,5");
-
-      euGroup.append("text")
-              .attr("x", 5)
-              .attr("y", y(limits.eu) - 5)
-              .attr("fill", "#f44336")
-              .style("font-size", "12px")
-              .text("EU");
+              .text("WHO 24-hour limit");
     }
   }
 
