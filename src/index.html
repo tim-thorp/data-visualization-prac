@@ -116,6 +116,18 @@
       <svg id="bar-chart"></svg>
     </div>
   </div>
+  <div class="chart-container" style="margin-top: 20px;">
+    <h2 style="text-align: center; margin-bottom: 20px;">Air Quality by Ventilation Method</h2>
+    <div class="controls">
+      <button class="control-button ventilation-button active" data-ventilation-pollutant="pm1">PM1</button>
+      <button class="control-button ventilation-button" data-ventilation-pollutant="pm25">PM2.5</button>
+      <button class="control-button ventilation-button" data-ventilation-pollutant="pm5">PM5</button>
+      <button class="control-button ventilation-button" data-ventilation-pollutant="pm10">PM10</button>
+      <button class="control-button ventilation-button" data-ventilation-pollutant="no2">NO₂</button>
+      <button class="control-button ventilation-button" data-ventilation-pollutant="voc">VOC</button>
+    </div>
+    <svg id="ventilation-chart"></svg>
+  </div>
 </div>
 
 <script>
@@ -144,6 +156,42 @@
       title: "NO₂ Concentration",
       limits: { who: 25, who_yearly: 10 },  // Updated from who: 21
       period: "24-hour"  // Changed from 8-hour
+    }
+  };
+
+  const ventilationPollutantConfig = {
+    pm1: {
+      internal: ["PM1_DEVICE_1", "PM1_DEVICE_2", "PM1_DEVICE_3", "PM1_DEVICE_4", "PM1_DEVICE_5"],
+      label: "PM1 (µg/m³)",
+      title: "PM1 Concentration"
+    },
+    pm25: {
+      internal: ["PM2.5_DEVICE_1", "PM2.5_DEVICE_2", "PM2.5_DEVICE_3", "PM2.5_DEVICE_4", "PM2.5_DEVICE_5"],
+      label: "PM2.5 (µg/m³)",
+      title: "PM2.5 Concentration",
+      limits: { who: 15 }
+    },
+    pm5: {
+      internal: ["PM5_DEVICE_1", "PM5_DEVICE_2", "PM5_DEVICE_3", "PM5_DEVICE_4", "PM5_DEVICE_5"],
+      label: "PM5 (µg/m³)",
+      title: "PM5 Concentration"
+    },
+    pm10: {
+      internal: ["PM10_DEVICE_1", "PM10_DEVICE_2", "PM10_DEVICE_3", "PM10_DEVICE_4", "PM10_DEVICE_5"],
+      label: "PM10 (µg/m³)",
+      title: "PM10 Concentration",
+      limits: { who: 45 }
+    },
+    no2: {
+      internal: ["NO2_DEVICE_1", "NO2_DEVICE_2", "NO2_DEVICE_3", "NO2_DEVICE_4", "NO2_DEVICE_5"],
+      label: "NO₂ (µg/m³)",
+      title: "NO₂ Concentration",
+      limits: { who: 25 }
+    },
+    voc: {
+      internal: ["VOC_DEVICE_1", "VOC_DEVICE_2", "VOC_DEVICE_3", "VOC_DEVICE_4", "VOC_DEVICE_5"],
+      label: "VOC (ppm)",
+      title: "Volatile Organic Compounds"
     }
   };
 
@@ -464,10 +512,243 @@
     }
   }
 
+  // Add these helper functions for the violin plot
+  function kernelDensityEstimator(kernel, X) {
+    return function(V) {
+      return X.map(x => [x, d3.mean(V, v => kernel(x - v))]);
+    };
+  }
+
+  function kernelEpanechnikov(bandwidth) {
+    return x => Math.abs(x /= bandwidth) <= 1 ? 0.75 * (1 - x * x) / bandwidth : 0;
+  }
+
+  function createViolinBoxPlot(data, config) {
+    const margin = {top: 40, right: 60, bottom: 70, left: 80};
+    const width = 1000 - margin.left - margin.right;
+    const height = 500 - margin.top - margin.bottom;
+
+    // Clear previous chart
+    d3.select("#ventilation-chart").selectAll("*").remove();
+
+    const svg = d3.select("#ventilation-chart")
+            .attr("width", width + margin.left + margin.right)
+            .attr("height", height + margin.top + margin.bottom)
+            .append("g")
+            .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    // Process data to get all values for each ventilation type
+    const ventData = {};
+    const MIN_DURATION = 30; // Minimum duration in minutes
+
+    // Helper function to remove outliers from an array
+    function removeOutliers(arr) {
+      const q1 = d3.quantile(arr, 0.25);
+      const q3 = d3.quantile(arr, 0.75);
+      const iqr = q3 - q1;
+      const validRange = [q1 - 1.5 * iqr, q3 + 1.5 * iqr];
+      return arr.filter(d => d >= validRange[0] && d <= validRange[1]);
+    }
+
+    // First pass: collect values that meet the duration threshold
+    data.forEach(d => {
+      config.internal.forEach((col, idx) => {
+        const value = parseFloat(d[col]);
+        const ventType = d[`VENT_TYPE_DEVICE_${idx + 1}`];
+        const ventTime = d[`VENT_TIME_DEVICE_${idx + 1}`];
+
+        if (!isNaN(value) && ventType && ventType !== "" && ventTime >= MIN_DURATION) {
+          if (!ventData[ventType]) {
+            ventData[ventType] = [];
+          }
+          ventData[ventType].push(value);
+        }
+      });
+    });
+
+    // Second pass: remove outliers from each ventilation type
+    Object.keys(ventData).forEach(ventType => {
+      ventData[ventType] = removeOutliers(ventData[ventType].sort((a, b) => a - b));
+    });
+
+    // Calculate medians for sorting
+    const ventTypeMedians = Object.entries(ventData).map(([type, values]) => ({
+      type: type,
+      median: d3.quantile(values, 0.5)
+    }));
+
+    // Sort ventilation types by median
+    const ventTypes = ventTypeMedians
+            .sort((a, b) => a.median - b.median)
+            .map(d => d.type);
+
+    // Get all values for scaling
+    const allValues = Object.values(ventData).flat();
+
+    // Create scales
+    const x = d3.scaleBand()
+            .range([0, width])
+            .domain(ventTypes)
+            .padding(0.2);
+
+    const y = d3.scaleLinear()
+            .range([height, 0])
+            .domain([0, d3.max(allValues)]);
+
+    // Add X axis
+    svg.append("g")
+            .attr("transform", `translate(0,${height})`)
+            .call(d3.axisBottom(x))
+            .selectAll("text")
+            .style("text-anchor", "end")
+            .attr("dx", "-.8em")
+            .attr("dy", ".15em")
+            .attr("transform", "rotate(-45)");
+
+    // Add Y axis
+    svg.append("g")
+            .call(d3.axisLeft(y));
+
+    // Add Y axis label
+    svg.append("text")
+            .attr("transform", "rotate(-90)")
+            .attr("y", 0 - margin.left)
+            .attr("x", 0 - (height / 2))
+            .attr("dy", "1em")
+            .style("text-anchor", "middle")
+            .text(config.label);
+
+    // Add title
+    svg.append("text")
+            .attr("x", width / 2)
+            .attr("y", 0 - margin.top / 2)
+            .attr("text-anchor", "middle")
+            .style("font-size", "16px")
+            .text(`${config.title} by Ventilation Method (duration ≥ ${MIN_DURATION}min)`);
+
+    // Create violin plots
+    ventTypes.forEach(ventType => {
+      const values = ventData[ventType];
+      const xPos = x(ventType);
+      const width = x.bandwidth();
+
+      // Use a fixed bandwidth based on data range and bin count
+      const binCount = 50;
+      const bandwidth = (y.domain()[1] - y.domain()[0]) / binCount;
+
+      // Generate points for the violin plot
+      const violinPoints = [];
+      const bins = d3.range(y.domain()[0], y.domain()[1], bandwidth);
+
+      bins.forEach(bin => {
+        const count = values.filter(v => v >= bin && v < bin + bandwidth).length;
+        violinPoints.push([bin, count / values.length / bandwidth]);
+      });
+
+      // Scale violin width
+      const maxDensity = d3.max(violinPoints, d => d[1]);
+      const violinScale = d3.scaleLinear()
+              .domain([0, maxDensity])
+              .range([0, width/2]);
+
+      // Draw violin
+      const area = d3.area()
+              .x0(d => xPos + width/2 - violinScale(d[1]))
+              .x1(d => xPos + width/2 + violinScale(d[1]))
+              .y(d => y(d[0]))
+              .curve(d3.curveBasis);
+
+      svg.append("path")
+              .datum(violinPoints)
+              .attr("class", "violin")
+              .attr("d", area)
+              .style("fill", "#e6e6e6")
+              .style("opacity", 0.6);
+
+      // Compute box plot statistics
+      const q1 = d3.quantile(values, 0.25);
+      const median = d3.quantile(values, 0.5);
+      const q3 = d3.quantile(values, 0.75);
+      const iqr = q3 - q1;
+      const min = d3.min(values);
+      const max = d3.max(values);
+
+      // Draw box plot
+      // Box
+      svg.append("rect")
+              .attr("x", xPos + width/4)
+              .attr("y", y(q3))
+              .attr("width", width/2)
+              .attr("height", y(q1) - y(q3))
+              .attr("stroke", "black")
+              .attr("fill", "#7570b3")
+              .attr("opacity", 0.7);
+
+      // Median line
+      svg.append("line")
+              .attr("x1", xPos + width/4)
+              .attr("x2", xPos + 3*width/4)
+              .attr("y1", y(median))
+              .attr("y2", y(median))
+              .attr("stroke", "black")
+              .attr("stroke-width", 2);
+
+      // Whiskers
+      svg.append("line")
+              .attr("x1", xPos + width/2)
+              .attr("x2", xPos + width/2)
+              .attr("y1", y(min))
+              .attr("y2", y(q1))
+              .attr("stroke", "black");
+
+      svg.append("line")
+              .attr("x1", xPos + width/2)
+              .attr("x2", xPos + width/2)
+              .attr("y1", y(q3))
+              .attr("y2", y(max))
+              .attr("stroke", "black");
+
+      // Whisker ends
+      svg.append("line")
+              .attr("x1", xPos + width/4)
+              .attr("x2", xPos + 3*width/4)
+              .attr("y1", y(min))
+              .attr("y2", y(min))
+              .attr("stroke", "black");
+
+      svg.append("line")
+              .attr("x1", xPos + width/4)
+              .attr("x2", xPos + 3*width/4)
+              .attr("y1", y(max))
+              .attr("y2", y(max))
+              .attr("stroke", "black");
+    });
+
+    // Add WHO guideline line if it exists
+    if (config.limits?.who) {
+      svg.append("line")
+              .attr("x1", 0)
+              .attr("x2", width)
+              .attr("y1", y(config.limits.who))
+              .attr("y2", y(config.limits.who))
+              .attr("stroke", "#d95f02")
+              .attr("stroke-width", 2)
+              .attr("stroke-dasharray", "5,5");
+
+      svg.append("text")
+              .attr("x", width - 5)
+              .attr("y", y(config.limits.who) - 5)
+              .attr("text-anchor", "end")
+              .attr("fill", "#d95f02")
+              .style("font-size", "12px")
+              .text("WHO 24-hour limit");
+    }
+  }
+
   // Load data and set up toggle functionality
   d3.csv("all_devices_merged.csv")
           .then(function(data) {
-            // Initial chart
+            // Initial line and bar charts
             const initialPollutant = "pm25";
             const config = pollutantConfig[initialPollutant];
             createLineChart("main-chart", data,
@@ -479,10 +760,10 @@
                     config
             );
 
-            // Set up toggle buttons
-            d3.selectAll(".control-button").on("click", function() {
+            // Set up main toggle buttons
+            d3.selectAll("[data-pollutant]").on("click", function() {
               // Update button styles
-              d3.selectAll(".control-button").classed("active", false);
+              d3.selectAll("[data-pollutant]").classed("active", false);
               d3.select(this).classed("active", true);
 
               // Get selected pollutant and create new chart
@@ -497,6 +778,21 @@
                       config
               );
             });
+
+            // Set up ventilation plot toggle buttons
+            // Update the ventilation plot event handlers
+            d3.selectAll("[data-ventilation-pollutant]").on("click", function() {
+              // Update button styles
+              d3.selectAll("[data-ventilation-pollutant]").classed("active", false);
+              d3.select(this).classed("active", true);
+
+              // Get selected pollutant and create new chart
+              const pollutant = this.getAttribute("data-ventilation-pollutant");
+              createViolinBoxPlot(data, ventilationPollutantConfig[pollutant]);
+            });
+
+            // Create initial ventilation plot with PM1
+            createViolinBoxPlot(data, ventilationPollutantConfig["pm1"]);
           })
           .catch(function(error) {
             console.error("Error loading the CSV:", error);
