@@ -144,7 +144,7 @@
       internal: ["PM2.5_DEVICE_1", "PM2.5_DEVICE_2", "PM2.5_DEVICE_3", "PM2.5_DEVICE_4", "PM2.5_DEVICE_5"],
       label: "PM2.5 (µg/m³)",
       title: "PM2.5 Concentration",
-      limits: { who: 10, eu: 25 },
+      limits: { who: 10, eu: 25, who_yearly: 5 },
       period: "24-hour"
     },
     pm10: {
@@ -152,7 +152,7 @@
       internal: ["PM10_DEVICE_1", "PM10_DEVICE_2", "PM10_DEVICE_3", "PM10_DEVICE_4", "PM10_DEVICE_5"],
       label: "PM10 (µg/m³)",
       title: "PM10 Concentration",
-      limits: { who: 20, eu: 40 },
+      limits: { who: 20, eu: 40, who_yearly: 15 },
       period: "24-hour"
     },
     no2: {
@@ -160,7 +160,7 @@
       internal: ["NO2_DEVICE_1", "NO2_DEVICE_2", "NO2_DEVICE_3", "NO2_DEVICE_4", "NO2_DEVICE_5"],
       label: "NO₂ (ppb)",
       title: "NO₂ Concentration",
-      limits: { who: 21 },
+      limits: { who: 21, who_yearly: 10 },
       period: "8-hour"
     }
   };
@@ -200,7 +200,10 @@
             .padding(0.3);
 
     const y = d3.scaleLinear()
-            .domain([0, d3.max(averages, d => d.value) * 1.1])
+            .domain([0, Math.max(
+                    d3.max(averages, d => d.value),
+                    config.limits?.who_yearly || 0
+            ) * 1.2])  // Increased padding to 1.2 to make room for label
             .range([height, 0]);
 
     // Add bars
@@ -252,6 +255,27 @@
             .attr("text-anchor", "middle")
             .style("font-size", "14px")
             .text(`Median Values (${config.period})`);
+
+    if (config.limits?.who_yearly) {
+      // Add the horizontal line
+      svg.append("line")
+              .attr("x1", 0)
+              .attr("x2", width)
+              .attr("y1", y(config.limits.who_yearly))
+              .attr("y2", y(config.limits.who_yearly))
+              .attr("stroke", "#ff9800")
+              .attr("stroke-width", 2)
+              .attr("stroke-dasharray", "5,5");
+
+      // Add the label
+      svg.append("text")
+              .attr("x", width/2)
+              .attr("y", y(config.limits.who_yearly) - 5)
+              .attr("text-anchor", "middle")
+              .attr("fill", "#ff9800")
+              .style("font-size", "12px")
+              .text(`WHO yearly limit (${config.limits.who_yearly})`);
+    }
   }
 
   function createLineChart(svgId, data, externalColumn, internalColumns, yLabel, chartTitle, limits, config) {
