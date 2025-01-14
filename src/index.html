@@ -843,16 +843,6 @@
       }
     });
 
-    // Calculate medians for sorting
-    const ventTypeMedians = Object.entries(processedVentData).map(([type, deviceArrays]) => {
-      // Calculate median for each device, then take median of medians
-      const deviceMedians = deviceArrays.map(arr => d3.median(arr));
-      return {
-        type: type,
-        median: d3.median(deviceMedians)
-      };
-    });
-
     // Use fixed order for ventilation types
     const ventTypes = ["no ventilation", "1 window", "2 windows"];
 
