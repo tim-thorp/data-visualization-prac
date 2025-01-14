@@ -137,12 +137,9 @@
 
     <!-- Pollutant selection -->
     <div class="controls">
-      <button class="control-button" data-pollutant="pm1" style="display: none;">PM1</button>
       <button class="control-button active" data-pollutant="pm25">PM2.5</button>
-      <button class="control-button" data-pollutant="pm5" style="display: none;">PM5</button>
       <button class="control-button" data-pollutant="pm10">PM10</button>
       <button class="control-button" data-pollutant="no2">NO₂</button>
-      <button class="control-button" data-pollutant="voc" style="display: none;">VOC</button>
     </div>
 
     <!-- Tab content -->
@@ -217,21 +214,11 @@
   };
 
   const ventilationPollutantConfig = {
-    pm1: {
-      internal: ["PM1_DEVICE_1", "PM1_DEVICE_2", "PM1_DEVICE_3", "PM1_DEVICE_4", "PM1_DEVICE_5"],
-      label: "PM1 (µg/m³)",
-      title: "PM1 Concentration"
-    },
     pm25: {
       internal: ["PM2.5_DEVICE_1", "PM2.5_DEVICE_2", "PM2.5_DEVICE_3", "PM2.5_DEVICE_4", "PM2.5_DEVICE_5"],
       label: "PM2.5 (µg/m³)",
       title: "PM2.5 Concentration",
       limits: { who: 15 }
-    },
-    pm5: {
-      internal: ["PM5_DEVICE_1", "PM5_DEVICE_2", "PM5_DEVICE_3", "PM5_DEVICE_4", "PM5_DEVICE_5"],
-      label: "PM5 (µg/m³)",
-      title: "PM5 Concentration"
     },
     pm10: {
       internal: ["PM10_DEVICE_1", "PM10_DEVICE_2", "PM10_DEVICE_3", "PM10_DEVICE_4", "PM10_DEVICE_5"],
@@ -244,11 +231,6 @@
       label: "NO₂ (µg/m³)",
       title: "NO₂ Concentration",
       limits: { who: 25 }
-    },
-    voc: {
-      internal: ["VOC_DEVICE_1", "VOC_DEVICE_2", "VOC_DEVICE_3", "VOC_DEVICE_4", "VOC_DEVICE_5"],
-      label: "VOC (ppm)",
-      title: "Volatile Organic Compounds"
     }
   };
 
@@ -830,10 +812,8 @@
       };
     });
 
-    // Sort ventilation types by median
-    const ventTypes = ventTypeMedians
-            .sort((a, b) => a.median - b.median)
-            .map(d => d.type);
+    // Use fixed order for ventilation types
+    const ventTypes = ["no ventilation", "1 window", "2 windows"];
 
     // Get all values for scaling
     const allValues = Object.values(processedVentData)
@@ -854,10 +834,8 @@
             .attr("transform", `translate(0,${height})`)
             .call(d3.axisBottom(x))
             .selectAll("text")
-            .style("text-anchor", "end")
-            .attr("dx", "-.8em")
-            .attr("dy", ".15em")
-            .attr("transform", "rotate(-45)");
+            .selectAll("text")
+            .style("text-anchor", "middle");
 
     // Add Y axis
     svg.append("g")
@@ -1003,11 +981,7 @@
       const pollutantButtons = document.querySelectorAll('.control-button');
       pollutantButtons.forEach(btn => {
         const pollutant = btn.dataset.pollutant;
-        if (button.dataset.tab === 'ventilation') {
-          btn.style.display = ['pm1', 'pm25', 'pm5', 'pm10', 'no2', 'voc'].includes(pollutant) ? 'block' : 'none';
-        } else {
-          btn.style.display = ['pm25', 'pm10', 'no2'].includes(pollutant) ? 'block' : 'none';
-        }
+        btn.style.display = ['pm25', 'pm10', 'no2'].includes(pollutant) ? 'block' : 'none';
       });
 
       // Ensure an active pollutant button is selected
