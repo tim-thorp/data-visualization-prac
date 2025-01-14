@@ -711,26 +711,6 @@
               .attr("y2", y(max))
               .attr("stroke", "black");
     });
-
-    // Add WHO guideline line if it exists
-    if (config.limits?.who) {
-      svg.append("line")
-              .attr("x1", 0)
-              .attr("x2", width)
-              .attr("y1", y(config.limits.who))
-              .attr("y2", y(config.limits.who))
-              .attr("stroke", "#d95f02")
-              .attr("stroke-width", 2)
-              .attr("stroke-dasharray", "5,5");
-
-      svg.append("text")
-              .attr("x", width - 5)
-              .attr("y", y(config.limits.who) - 5)
-              .attr("text-anchor", "end")
-              .attr("fill", "#d95f02")
-              .style("font-size", "12px")
-              .text("WHO 24-hour limit");
-    }
   }
 
   // Load data and set up toggle functionality
