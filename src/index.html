@@ -345,8 +345,9 @@
   }
 
   function createLineChart(svgId, data, externalColumn, internalColumns, yLabel, chartTitle, limits, config) {
-    // Clear previous chart
+    // Clear previous charts
     d3.select("#" + svgId).selectAll("*").remove();
+    d3.select("#bar-chart").selectAll("*").remove();
 
     // Update the chart title with the period
     const fullChartTitle = `${chartTitle} (${config.period} rolling mean)`;
@@ -363,7 +364,6 @@
 
     // Process data
     const processedData = data.map(d => {
-      // First get median across devices for this timestamp
       const internalValues = internalColumns.map(col => {
         const val = d[col];
         return (val === '' || val === undefined || val === null) ? null : +val;
@@ -378,28 +378,23 @@
     }).filter(d => d.date && !isNaN(d.date.getTime()))
             .sort((a, b) => a.date - b.date);
 
-// Calculate rolling averages
-    const windowHours = config.period === '8-hour' ? 8 : 24; // 8 hours for NO2, 24 for PM
-    const windowMilliseconds = windowHours * 60 * 60 * 1000; // Convert hours to milliseconds
+    // Calculate rolling averages
+    const windowHours = config.period === '8-hour' ? 8 : 24;
+    const windowMilliseconds = windowHours * 60 * 60 * 1000;
 
     const rollingAverages = processedData.map((currentPoint, i) => {
       const currentTime = currentPoint.date.getTime();
       let windowStart = i;
 
-      // Find start of window by moving backwards until we're outside the time window
       while (windowStart > 0 &&
       (currentTime - processedData[windowStart - 1].date.getTime()) <= windowMilliseconds) {
         windowStart--;
       }
 
-      // Get window data
       const windowData = processedData.slice(windowStart, i + 1);
-
-      // Calculate time coverage
       const timeSpan = currentTime - windowData[0].date.getTime();
       const coverage = timeSpan / windowMilliseconds;
 
-      // Calculate internal and external averages
       const internal = windowData
               .filter(d => d.internal !== null)
               .map(d => d.internal);
@@ -424,14 +419,13 @@
             limits?.who || 0
     ) * 1.1;
 
-    // Update legend text
-    document.getElementById('external-legend').textContent = `External`;
-    document.getElementById('internal-legend').textContent = `Internal`;
+    // Create tooltip
+    const tooltip = d3.select("body")
+            .append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
 
-    // Create bar chart with the processed data
-    createBarChart("bar-chart", rollingAverages, yLabel, config, maxValue);
-
-    // Find gaps in data (where either external or internal data is missing)
+    // Find gaps in data
     const gaps = [];
     let currentGap = null;
 
@@ -452,7 +446,7 @@
       gaps.push(currentGap);
     }
 
-    // Create scales using rolling averages
+    // Create scales
     const x = d3.scaleTime()
             .domain(d3.extent(rollingAverages, d => d.date))
             .range([0, width]);
@@ -461,7 +455,7 @@
             .domain([0, maxValue])
             .range([height, 0]);
 
-    // Add missing data background first (bottom layer)
+    // Add missing data background
     svg.selectAll(".gap")
             .data(gaps)
             .enter()
@@ -484,20 +478,65 @@
             .y(d => y(d.internal))
             .defined(d => d.internal !== null);
 
+    // Add hover effects and tooltip interactions
+    const addHoverArea = (data, className, color) => {
+      svg.append("path")
+              .datum(data)
+              .attr("class", `hover-area ${className}`)
+              .attr("fill", "none")
+              .attr("stroke", "transparent")
+              .attr("stroke-width", 10)
+              .attr("d", className === "external" ? externalLine : internalLine)
+              .style("pointer-events", "all")
+              .on("mouseover", function() {
+                d3.select(`.line-${className}`).style("stroke-width", 3);
+              })
+              .on("mouseout", function() {
+                d3.select(`.line-${className}`).style("stroke-width", 1.5);
+                tooltip.style("opacity", 0);
+              })
+              .on("mousemove", function(event) {
+                const [mouseX] = d3.pointer(event);
+                const bisectDate = d3.bisector(d => d.date).left;
+                const x0 = x.invert(mouseX);
+                const i = bisectDate(data, x0, 1);
+                const d0 = data[i - 1];
+                const d1 = data[i];
+                if (!d0 || !d1) return;
+                const d = x0 - d0.date > d1.date - x0 ? d1 : d0;
+                const value = className === "external" ? d.external : d.internal;
+
+                if (value !== null) {
+                  tooltip.style("opacity", 0.9)
+                          .html(`Date: ${d.date.toLocaleDateString()}<br/>
+                  ${className === "external" ? "External" : "Internal"}: ${value.toFixed(2)} ${yLabel}`)
+                          .style("left", (event.pageX + 10) + "px")
+                          .style("top", (event.pageY - 28) + "px");
+                }
+              });
+    };
+
     // Add the external line path
     svg.append("path")
             .datum(rollingAverages)
+            .attr("class", "line-external")
             .attr("fill", "none")
             .attr("stroke", "#1b9e77")
             .attr("stroke-width", 1.5)
             .attr("d", externalLine);
 
+    // Add the internal line path
     svg.append("path")
             .datum(rollingAverages)
+            .attr("class", "line-internal")
             .attr("fill", "none")
             .attr("stroke", "#7570b3")
             .attr("stroke-width", 1.5)
             .attr("d", internalLine);
+
+    // Add hover areas
+    addHoverArea(rollingAverages, "external", "#1b9e77");
+    addHoverArea(rollingAverages, "internal", "#7570b3");
 
     // Add X axis
     svg.append("g")
@@ -528,9 +567,8 @@
             .style("font-size", "16px")
             .text(fullChartTitle);
 
-    // Add WHO guideline line last (top layer)
+    // Add WHO guideline line
     if (limits?.who) {
-      // Create a group for WHO elements
       const whoGroup = svg.append("g");
 
       whoGroup.append("line")
@@ -549,6 +587,9 @@
               .style("font-size", "12px")
               .text("WHO 24-hour limit");
     }
+
+    // Create the bar chart with the same processed data
+    createBarChart("bar-chart", rollingAverages, yLabel, config, maxValue);
   }
 
   function createHeatmap(data, config) {
