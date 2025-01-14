@@ -585,42 +585,63 @@
             .attr("transform", `translate(${margin.left},${margin.top})`);
 
     // Process data
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    // Reorder days to start with Monday
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     const hours = d3.range(24);
 
-    // First, collect all values for each day-hour combination
+    // First, collect values for each device separately for each day-hour combination
     const timeData = {};
     data.forEach(d => {
       const date = new Date(d.date_bin);
-      const day = days[date.getDay()];
+      let dayIndex = date.getDay() - 1;
+      if (dayIndex < 0) dayIndex = 6;
+      const day = days[dayIndex];
       const hour = date.getHours();
+      const key = `${day}-${hour}`;
 
-      const values = config.internal
-              .map(col => parseFloat(d[col]))
-              .filter(val => !isNaN(val));
-
-      if (values.length > 0) {
-        const key = `${day}-${hour}`;
-        if (!timeData[key]) {
-          timeData[key] = [];
-        }
-        timeData[key] = timeData[key].concat(values);
+      if (!timeData[key]) {
+        timeData[key] = {
+          deviceValues: Array(config.internal.length).fill([])
+        };
       }
+
+      // Collect values for each device separately
+      config.internal.forEach((col, deviceIndex) => {
+        const value = parseFloat(d[col]);
+        if (!isNaN(value)) {
+          timeData[key].deviceValues[deviceIndex] =
+                  timeData[key].deviceValues[deviceIndex].concat(value);
+        }
+      });
     });
 
-    // Calculate medians for each time slot
+    // Calculate medians for each time slot, requiring all devices to have data
     const heatmapData = [];
     days.forEach(day => {
       hours.forEach(hour => {
         const key = `${day}-${hour}`;
-        const values = timeData[key];
-        if (values && values.length > 0) {
-          heatmapData.push({
-            day: day,
-            hour: hour,
-            value: d3.median(values),
-            count: values.length
-          });
+        const timeSlot = timeData[key];
+
+        if (timeSlot) {
+          // Check if all devices have data
+          const hasAllDevices = timeSlot.deviceValues.every(deviceData => deviceData.length > 0);
+
+          if (hasAllDevices) {
+            // Calculate median for each device first
+            const deviceMedians = timeSlot.deviceValues.map(deviceData =>
+                    d3.median(deviceData)
+            );
+
+            // Then take the median of the device medians
+            const overallMedian = d3.median(deviceMedians);
+
+            heatmapData.push({
+              day: day,
+              hour: hour,
+              value: overallMedian,
+              count: timeSlot.deviceValues.length // Now represents number of devices
+            });
+          }
         }
       });
     });
@@ -636,10 +657,13 @@
             .domain(days)
             .padding(0.01);
 
-    // Use 95th percentile for color scale to avoid outlier influence
+    // Create color scale specific to this pollutant's data
     const colorScale = d3.scaleSequential()
-            .interpolator(d3.interpolateYlOrRd)
-            .domain([0, d3.quantile(heatmapData.map(d => d.value), 0.95)]);
+            .interpolator(t => d3.interpolate("#ffffff", "#7570b3")(t))
+            .domain([
+              d3.min(heatmapData, d => d.value),
+              d3.quantile(heatmapData.map(d => d.value), 0.95)
+            ]);
 
     // Create tooltip
     const tooltip = d3.select("body")
@@ -751,45 +775,60 @@
             .append("g")
             .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Process data to get all values for each ventilation type
-    const ventData = {};
+    // Process data to get values for each device and ventilation type
     const MIN_DURATION = 30; // Minimum duration in minutes
+    const ventData = {};
+
+    // First pass: organize data by ventilation type and device
+    data.forEach(d => {
+      config.internal.forEach((col, deviceIndex) => {
+        const value = parseFloat(d[col]);
+        const ventType = d[`VENT_TYPE_DEVICE_${deviceIndex + 1}`];
+        const ventTime = d[`VENT_TIME_DEVICE_${deviceIndex + 1}`];
+
+        if (!isNaN(value) && ventType && ventType !== "" && ventTime >= MIN_DURATION) {
+          if (!ventData[ventType]) {
+            ventData[ventType] = Array(config.internal.length).fill().map(() => []);
+          }
+          ventData[ventType][deviceIndex].push(value);
+        }
+      });
+    });
 
     // Helper function to remove outliers from an array
     function removeOutliers(arr) {
-      const q1 = d3.quantile(arr, 0.25);
-      const q3 = d3.quantile(arr, 0.75);
+      if (arr.length === 0) return arr;
+      const q1 = d3.quantile(arr.sort(d3.ascending), 0.25);
+      const q3 = d3.quantile(arr.sort(d3.ascending), 0.75);
       const iqr = q3 - q1;
       const validRange = [q1 - 1.5 * iqr, q3 + 1.5 * iqr];
       return arr.filter(d => d >= validRange[0] && d <= validRange[1]);
     }
 
-    // First pass: collect values that meet the duration threshold
-    data.forEach(d => {
-      config.internal.forEach((col, idx) => {
-        const value = parseFloat(d[col]);
-        const ventType = d[`VENT_TYPE_DEVICE_${idx + 1}`];
-        const ventTime = d[`VENT_TIME_DEVICE_${idx + 1}`];
+    // Process data: remove outliers and calculate device medians
+    const processedVentData = {};
+    Object.entries(ventData).forEach(([ventType, deviceArrays]) => {
+      // Check if we have data from all devices
+      const hasAllDevices = deviceArrays.every(arr => arr.length > 0);
 
-        if (!isNaN(value) && ventType && ventType !== "" && ventTime >= MIN_DURATION) {
-          if (!ventData[ventType]) {
-            ventData[ventType] = [];
-          }
-          ventData[ventType].push(value);
-        }
-      });
-    });
+      if (hasAllDevices) {
+        // Remove outliers for each device separately
+        const cleanedDeviceArrays = deviceArrays.map(arr => removeOutliers(arr));
 
-    // Second pass: remove outliers from each ventilation type
-    Object.keys(ventData).forEach(ventType => {
-      ventData[ventType] = removeOutliers(ventData[ventType].sort((a, b) => a - b));
+        // Store processed data
+        processedVentData[ventType] = cleanedDeviceArrays.map(arr => arr.sort(d3.ascending));
+      }
     });
 
     // Calculate medians for sorting
-    const ventTypeMedians = Object.entries(ventData).map(([type, values]) => ({
-      type: type,
-      median: d3.quantile(values, 0.5)
-    }));
+    const ventTypeMedians = Object.entries(processedVentData).map(([type, deviceArrays]) => {
+      // Calculate median for each device, then take median of medians
+      const deviceMedians = deviceArrays.map(arr => d3.median(arr));
+      return {
+        type: type,
+        median: d3.median(deviceMedians)
+      };
+    });
 
     // Sort ventilation types by median
     const ventTypes = ventTypeMedians
@@ -797,7 +836,8 @@
             .map(d => d.type);
 
     // Get all values for scaling
-    const allValues = Object.values(ventData).flat();
+    const allValues = Object.values(processedVentData)
+            .flat(2);
 
     // Create scales
     const x = d3.scaleBand()
@@ -842,9 +882,20 @@
 
     // Create violin plots
     ventTypes.forEach(ventType => {
-      const values = ventData[ventType];
+      const deviceArrays = processedVentData[ventType];
       const xPos = x(ventType);
       const width = x.bandwidth();
+
+      // Combine data from all devices, but weight them equally
+      const combinedValues = [];
+      const deviceSampleSize = Math.min(...deviceArrays.map(arr => arr.length));
+
+      deviceArrays.forEach(deviceData => {
+        // Sample equal number of points from each device
+        const sampledData = d3.shuffle(deviceData)
+                .slice(0, deviceSampleSize);
+        combinedValues.push(...sampledData);
+      });
 
       // Use a fixed bandwidth based on data range and bin count
       const binCount = 50;
@@ -855,8 +906,8 @@
       const bins = d3.range(y.domain()[0], y.domain()[1], bandwidth);
 
       bins.forEach(bin => {
-        const count = values.filter(v => v >= bin && v < bin + bandwidth).length;
-        violinPoints.push([bin, count / values.length / bandwidth]);
+        const count = combinedValues.filter(v => v >= bin && v < bin + bandwidth).length;
+        violinPoints.push([bin, count / combinedValues.length / bandwidth]);
       });
 
       // Scale violin width
@@ -879,12 +930,12 @@
               .style("fill", "#e6e6e6")
               .style("opacity", 0.6);
 
-      // Compute box plot statistics
-      const q1 = d3.quantile(values, 0.25);
-      const median = d3.quantile(values, 0.5);
-      const q3 = d3.quantile(values, 0.75);
-      const min = d3.min(values);
-      const max = d3.max(values);
+      // Calculate box plot statistics from the equal-weighted combined data
+      const q1 = d3.quantile(combinedValues, 0.25);
+      const median = d3.quantile(combinedValues, 0.5);
+      const q3 = d3.quantile(combinedValues, 0.75);
+      const min = d3.min(combinedValues);
+      const max = d3.max(combinedValues);
 
       // Draw box plot
       // Box
