@@ -184,20 +184,6 @@
       <div class="chart-grid">
         <!-- Line chart -->
         <div class="chart-container">
-          <div class="legend">
-            <div class="legend-item">
-              <div class="legend-box legend-external"></div>
-              <span id="external-legend">External</span>
-            </div>
-            <div class="legend-item">
-              <div class="legend-box legend-internal"></div>
-              <span id="internal-legend">Internal</span>
-            </div>
-            <div class="legend-item">
-              <div class="legend-box missing-data"></div>
-              <span>Missing data</span>
-            </div>
-          </div>
           <svg id="main-chart"></svg>
         </div>
         <!-- Bar chart -->
@@ -394,12 +380,13 @@
     d3.select("#" + svgId).selectAll("*").remove();
     d3.select("#bar-chart").selectAll("*").remove();
 
-    // Update the chart title with the period
     const fullChartTitle = `${chartTitle} (${config.period} rolling mean)`;
 
-    const margin = {top: 40, right: 30, bottom: 50, left: 60};
+    // Keep original margins to maintain alignment
+    const margin = {top: 40, right: 30, bottom: 100, left: 60};
+    const extra_space_for_legend = 50
     const width = 1000 - margin.left - margin.right;
-    const height = 500 - margin.top - margin.bottom;
+    const height = 500 - margin.top - margin.bottom + extra_space_for_legend;
 
     const svg = d3.select("#" + svgId)
             .attr("width", width + margin.left + margin.right)
@@ -407,7 +394,7 @@
             .append("g")
             .attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Process data
+    // Process data and calculate rolling averages (unchanged)
     const processedData = data.map(d => {
       const internalValues = internalColumns.map(col => {
         const val = d[col];
@@ -464,11 +451,14 @@
             limits?.who || 0
     ) * 1.1;
 
-    // Create tooltip
-    const tooltip = d3.select("body")
-            .append("div")
-            .attr("class", "tooltip")
-            .style("opacity", 0);
+    // Create scales
+    const x = d3.scaleTime()
+            .domain(d3.extent(rollingAverages, d => d.date))
+            .range([0, width]);
+
+    const y = d3.scaleLinear()
+            .domain([0, maxValue])
+            .range([height, 0]);
 
     // Find gaps in data
     const gaps = [];
@@ -490,15 +480,6 @@
       currentGap.end = rollingAverages[rollingAverages.length - 1].date;
       gaps.push(currentGap);
     }
-
-    // Create scales
-    const x = d3.scaleTime()
-            .domain(d3.extent(rollingAverages, d => d.date))
-            .range([0, width]);
-
-    const y = d3.scaleLinear()
-            .domain([0, maxValue])
-            .range([height, 0]);
 
     // Add missing data background
     svg.selectAll(".gap")
@@ -523,7 +504,24 @@
             .y(d => y(d.internal))
             .defined(d => d.internal !== null);
 
-    // Add hover effects and tooltip interactions
+    // Add the lines
+    svg.append("path")
+            .datum(rollingAverages)
+            .attr("class", "line-external")
+            .attr("fill", "none")
+            .attr("stroke", "#1b9e77")
+            .attr("stroke-width", 1.5)
+            .attr("d", externalLine);
+
+    svg.append("path")
+            .datum(rollingAverages)
+            .attr("class", "line-internal")
+            .attr("fill", "none")
+            .attr("stroke", "#7570b3")
+            .attr("stroke-width", 1.5)
+            .attr("d", internalLine);
+
+    // Add hover effects
     const addHoverArea = (data, className, color) => {
       svg.append("path")
               .datum(data)
@@ -554,30 +552,12 @@
                 if (value !== null) {
                   tooltip.style("opacity", 0.9)
                           .html(`Date: ${d.date.toLocaleDateString()}<br/>
-                  ${className === "external" ? "External" : "Internal"}: ${value.toFixed(2)} µg/m³`)
+                            ${className === "external" ? "External" : "Internal"}: ${value.toFixed(2)} µg/m³`)
                           .style("left", (event.pageX + 10) + "px")
                           .style("top", (event.pageY - 28) + "px");
                 }
               });
     };
-
-    // Add the external line path
-    svg.append("path")
-            .datum(rollingAverages)
-            .attr("class", "line-external")
-            .attr("fill", "none")
-            .attr("stroke", "#1b9e77")
-            .attr("stroke-width", 1.5)
-            .attr("d", externalLine);
-
-    // Add the internal line path
-    svg.append("path")
-            .datum(rollingAverages)
-            .attr("class", "line-internal")
-            .attr("fill", "none")
-            .attr("stroke", "#7570b3")
-            .attr("stroke-width", 1.5)
-            .attr("d", internalLine);
 
     // Add hover areas
     addHoverArea(rollingAverages, "external", "#1b9e77");
@@ -615,7 +595,6 @@
     // Add WHO guideline line
     if (limits?.who) {
       const whoGroup = svg.append("g");
-
       whoGroup.append("line")
               .attr("x1", 0)
               .attr("x2", width)
@@ -633,7 +612,60 @@
               .text("WHO 24-hour limit");
     }
 
-    // Create the bar chart with the same processed data
+    // Add horizontal legend centered under the chart
+    const legendSpacing = 120;  // Fixed spacing between items
+    const totalLegendWidth = legendSpacing * 2;  // Space for 3 items
+    const legendStartX = (width - totalLegendWidth) / 2;  // Center the legend
+
+    const legendGroup = svg.append("g")
+            .attr("class", "legend")
+            .attr("transform", `translate(${legendStartX}, ${height + 60})`);  // Position below x-axis
+
+    // External legend item
+    const legendItem1 = legendGroup.append("g")
+            .attr("transform", `translate(0, 0)`);
+
+    legendItem1.append("rect")
+            .attr("width", 16)
+            .attr("height", 16)
+            .attr("fill", "#1b9e77");
+
+    legendItem1.append("text")
+            .attr("x", 24)
+            .attr("y", 12)
+            .text("External");
+
+    // Internal legend item
+    const legendItem2 = legendGroup.append("g")
+            .attr("transform", `translate(${legendSpacing}, 0)`);
+
+    legendItem2.append("rect")
+            .attr("width", 16)
+            .attr("height", 16)
+            .attr("fill", "#7570b3");
+
+    legendItem2.append("text")
+            .attr("x", 24)
+            .attr("y", 12)
+            .text("Internal");
+
+    // Missing data legend item
+    const legendItem3 = legendGroup.append("g")
+            .attr("transform", `translate(${legendSpacing * 2}, 0)`);
+
+    legendItem3.append("rect")
+            .attr("width", 16)
+            .attr("height", 16)
+            .attr("fill", "#f5f5f5")
+            .attr("stroke", "#ddd")
+            .attr("stroke-width", 1);
+
+    legendItem3.append("text")
+            .attr("x", 24)
+            .attr("y", 12)
+            .text("Missing data");
+
+    // Create the bar chart with the same maxValue
     createBarChart("bar-chart", rollingAverages, yLabel, config, maxValue);
   }
 
@@ -642,7 +674,7 @@
     d3.select("#heatmap-container").selectAll("*").remove();
 
     const margin = { top: 40, right: 80, bottom: 60, left: 80 };
-    const width = 1000 - margin.left - margin.right;
+    const width = 1350 - margin.left - margin.right;
     const height = 500 - margin.top - margin.bottom;
 
     const svg = d3.select("#heatmap-container")
@@ -836,7 +868,7 @@
 
   function createViolinBoxPlot(data, config) {
     const margin = {top: 40, right: 60, bottom: 70, left: 80};
-    const width = 1000 - margin.left - margin.right;
+    const width = 1350 - margin.left - margin.right;
     const height = 500 - margin.top - margin.bottom;
 
     // Clear previous chart
