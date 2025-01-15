@@ -388,6 +388,12 @@
     const width = 1000 - margin.left - margin.right;
     const height = 500 - margin.top - margin.bottom + extra_space_for_legend;
 
+    // Create tooltip
+    const tooltip = d3.select("body")
+            .append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+
     const svg = d3.select("#" + svgId)
             .attr("width", width + margin.left + margin.right)
             .attr("height", height + margin.top + margin.bottom)
@@ -708,7 +714,7 @@
       // Collect values for each device separately
       config.internal.forEach((col, deviceIndex) => {
         const value = parseFloat(d[col]);
-        if (!isNaN(value)) {
+        if (!isNaN(value) && value > 0) {  // Only include positive values
           timeData[key].deviceValues[deviceIndex] =
                   timeData[key].deviceValues[deviceIndex].concat(value);
         }
@@ -897,7 +903,7 @@
         const ventType = d[`VENT_TYPE_DEVICE_${deviceIndex + 1}`];
         const ventTime = d[`VENT_TIME_DEVICE_${deviceIndex + 1}`];
 
-        if (!isNaN(value) && ventType && ventType !== "" && ventTime >= MIN_DURATION) {
+        if (!isNaN(value) && value > 0 && ventType && ventType !== "" && ventTime >= MIN_DURATION) {  // Added value > 0 check
           if (!ventData[ventType]) {
             ventData[ventType] = Array(config.internal.length).fill().map(() => []);
           }
