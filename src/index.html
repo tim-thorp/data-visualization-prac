@@ -867,12 +867,13 @@
   }
 
   function createViolinBoxPlot(data, config) {
-    const margin = {top: 40, right: 60, bottom: 70, left: 80};
-    const width = 1350 - margin.left - margin.right;
-    const height = 500 - margin.top - margin.bottom;
-
     // Clear previous chart
     d3.select("#ventilation-chart").selectAll("*").remove();
+
+    // Set up dimensions
+    const margin = {top: 50, right: 50, bottom: 80, left: 180};
+    const width = 1200 - margin.left - margin.right;
+    const height = 400 - margin.top - margin.bottom;
 
     const svg = d3.select("#ventilation-chart")
             .attr("width", width + margin.left + margin.right)
@@ -886,14 +887,10 @@
             .attr("class", "tooltip")
             .style("opacity", 0);
 
-    // Helper function to format numbers
-    const formatNumber = d3.format(".1f");
-
-    // Process data to get values for each device and ventilation type
-    const MIN_DURATION = 30; // Minimum duration in minutes
+    const MIN_DURATION = 30;
     const ventData = {};
 
-    // First pass: organize data by ventilation type and device
+    // Process data
     data.forEach(d => {
       config.internal.forEach((col, deviceIndex) => {
         const value = parseFloat(d[col]);
@@ -909,7 +906,7 @@
       });
     });
 
-    // Helper function to remove outliers from an array
+    // Helper function to remove outliers
     function removeOutliers(arr) {
       if (arr.length === 0) return arr;
       const q1 = d3.quantile(arr.sort(d3.ascending), 0.25);
@@ -922,105 +919,90 @@
     // Process data: remove outliers and calculate device medians
     const processedVentData = {};
     Object.entries(ventData).forEach(([ventType, deviceArrays]) => {
-      // Check if we have data from all devices
       const hasAllDevices = deviceArrays.every(arr => arr.length > 0);
-
       if (hasAllDevices) {
-        // Remove outliers for each device separately
         const cleanedDeviceArrays = deviceArrays.map(arr => removeOutliers(arr));
-
-        // Store processed data
         processedVentData[ventType] = cleanedDeviceArrays.map(arr => arr.sort(d3.ascending));
       }
     });
 
-    // Use fixed order for ventilation types
     const ventTypes = ["no ventilation", "1 window", "2 windows"];
-
-    // Get all values for scaling
-    const allValues = Object.values(processedVentData)
-            .flat(2);
+    const allValues = Object.values(processedVentData).flat(2);
 
     // Create scales
-    const x = d3.scaleBand()
-            .range([0, width])
+    const y = d3.scaleBand()
+            .range([height, 0])
             .domain(ventTypes)
             .padding(0.2);
 
-    const y = d3.scaleLinear()
-            .range([height, 0])
+    const x = d3.scaleLinear()
+            .range([0, width])
             .domain([0, d3.max(allValues)]);
 
-    // Add X axis
-    svg.append("g")
-            .attr("transform", `translate(0,${height})`)
-            .call(d3.axisBottom(x))
-            .selectAll("text")
-            .selectAll("text")
-            .style("text-anchor", "middle");
-
-    // Add Y axis
+    // Add Y axis (categories)
     svg.append("g")
             .call(d3.axisLeft(y));
 
-    // Add Y axis label
+    // Add X axis (values)
+    svg.append("g")
+            .attr("transform", `translate(0,${height})`)
+            .call(d3.axisBottom(x));
+
+    // Add X axis label
     svg.append("text")
-            .attr("transform", "rotate(-90)")
-            .attr("y", 0 - margin.left)
-            .attr("x", 0 - (height / 2))
-            .attr("dy", "1em")
-            .style("text-anchor", "middle")
+            .attr("x", width / 2)
+            .attr("y", height + margin.bottom - 10)
+            .attr("text-anchor", "middle")
             .text(config.label);
 
     // Add title
     svg.append("text")
             .attr("x", width / 2)
-            .attr("y", 0 - margin.top / 2)
+            .attr("y", -margin.top / 2)
             .attr("text-anchor", "middle")
             .style("font-size", "16px")
             .text(`${config.title} by Ventilation Method (duration ≥ ${MIN_DURATION}min)`);
 
+    // Format numbers for tooltip
+    const formatNumber = d3.format(".1f");
+
     // Create violin plots
     ventTypes.forEach(ventType => {
       const deviceArrays = processedVentData[ventType];
-      const xPos = x(ventType);
-      const width = x.bandwidth();
+      const yPos = y(ventType);
+      const height = y.bandwidth();
 
-      // Combine data from all devices, but weight them equally
+      // Combine data from all devices with equal weighting
       const combinedValues = [];
       const deviceSampleSize = Math.min(...deviceArrays.map(arr => arr.length));
 
       deviceArrays.forEach(deviceData => {
-        // Sample equal number of points from each device
-        const sampledData = d3.shuffle(deviceData)
-                .slice(0, deviceSampleSize);
+        const sampledData = d3.shuffle(deviceData).slice(0, deviceSampleSize);
         combinedValues.push(...sampledData);
       });
 
-      // Use a fixed bandwidth based on data range and bin count
+      // Generate violin plot points
       const binCount = 50;
-      const bandwidth = (y.domain()[1] - y.domain()[0]) / binCount;
-
-      // Generate points for the violin plot
+      const bandwidth = (x.domain()[1] - x.domain()[0]) / binCount;
       const violinPoints = [];
-      const bins = d3.range(y.domain()[0], y.domain()[1], bandwidth);
+      const bins = d3.range(x.domain()[0], x.domain()[1], bandwidth);
 
       bins.forEach(bin => {
         const count = combinedValues.filter(v => v >= bin && v < bin + bandwidth).length;
         violinPoints.push([bin, count / combinedValues.length / bandwidth]);
       });
 
-      // Scale violin width
+      // Scale violin height
       const maxDensity = d3.max(violinPoints, d => d[1]);
       const violinScale = d3.scaleLinear()
               .domain([0, maxDensity])
-              .range([0, width/2]);
+              .range([0, height/2]);
 
       // Draw violin
       const area = d3.area()
-              .x0(d => xPos + width/2 - violinScale(d[1]))
-              .x1(d => xPos + width/2 + violinScale(d[1]))
-              .y(d => y(d[0]))
+              .x(d => x(d[0]))
+              .y0(d => yPos + height/2 - violinScale(d[1]))
+              .y1(d => yPos + height/2 + violinScale(d[1]))
               .curve(d3.curveBasis);
 
       svg.append("path")
@@ -1030,20 +1012,19 @@
               .style("fill", "#e6e6e6")
               .style("opacity", 0.6);
 
-      // Calculate box plot statistics from the equal-weighted combined data
+      // Calculate box plot statistics
       const q1 = d3.quantile(combinedValues, 0.25);
       const median = d3.quantile(combinedValues, 0.5);
       const q3 = d3.quantile(combinedValues, 0.75);
       const min = d3.min(combinedValues);
       const max = d3.max(combinedValues);
 
-      // Draw box plot
-// Box
+      // Draw box
       svg.append("rect")
-              .attr("x", xPos + width/4)
-              .attr("y", y(q3))
-              .attr("width", width/2)
-              .attr("height", y(q1) - y(q3))
+              .attr("x", x(q1))
+              .attr("y", yPos + height/4)
+              .attr("width", x(q3) - x(q1))
+              .attr("height", height/2)
               .attr("stroke", "black")
               .attr("fill", "#7570b3")
               .attr("opacity", 0.7)
@@ -1055,7 +1036,7 @@
                 tooltip.html(`
             Q1: ${formatNumber(q1)} µg/m³<br/>
             Median: ${formatNumber(median)} µg/m³<br/>
-            Q3: ${formatNumber(q3)} µg/m³<br/>
+            Q3: ${formatNumber(q3)} µg/m³
           `)
                         .style("left", (event.pageX + 10) + "px")
                         .style("top", (event.pageY - 28) + "px");
@@ -1066,12 +1047,12 @@
                         .style("opacity", 0);
               });
 
-// Median line with tooltip
+      // Draw median line
       svg.append("line")
-              .attr("x1", xPos + width/4)
-              .attr("x2", xPos + 3*width/4)
-              .attr("y1", y(median))
-              .attr("y2", y(median))
+              .attr("x1", x(median))
+              .attr("x2", x(median))
+              .attr("y1", yPos + height/4)
+              .attr("y2", yPos + 3*height/4)
               .attr("stroke", "black")
               .attr("stroke-width", 2)
               .style("cursor", "pointer")
@@ -1089,13 +1070,13 @@
                         .style("opacity", 0);
               });
 
-// Whiskers with tooltips
-// Lower whisker
+      // Draw whiskers
+      // Left whisker
       svg.append("line")
-              .attr("x1", xPos + width/2)
-              .attr("x2", xPos + width/2)
-              .attr("y1", y(min))
-              .attr("y2", y(q1))
+              .attr("x1", x(min))
+              .attr("x2", x(q1))
+              .attr("y1", yPos + height/2)
+              .attr("y2", yPos + height/2)
               .attr("stroke", "black")
               .style("cursor", "pointer")
               .on("mouseover", function(event) {
@@ -1112,12 +1093,12 @@
                         .style("opacity", 0);
               });
 
-// Upper whisker
+      // Right whisker
       svg.append("line")
-              .attr("x1", xPos + width/2)
-              .attr("x2", xPos + width/2)
-              .attr("y1", y(q3))
-              .attr("y2", y(max))
+              .attr("x1", x(q3))
+              .attr("x2", x(max))
+              .attr("y1", yPos + height/2)
+              .attr("y2", yPos + height/2)
               .attr("stroke", "black")
               .style("cursor", "pointer")
               .on("mouseover", function(event) {
@@ -1134,22 +1115,47 @@
                         .style("opacity", 0);
               });
 
-// Whisker ends
+      // Draw whisker ends
       svg.append("line")
-              .attr("x1", xPos + width/4)
-              .attr("x2", xPos + 3*width/4)
-              .attr("y1", y(min))
-              .attr("y2", y(min))
+              .attr("x1", x(min))
+              .attr("x2", x(min))
+              .attr("y1", yPos + height/3)
+              .attr("y2", yPos + 2*height/3)
               .attr("stroke", "black");
 
       svg.append("line")
-              .attr("x1", xPos + width/4)
-              .attr("x2", xPos + 3*width/4)
-              .attr("y1", y(max))
-              .attr("y2", y(max))
+              .attr("x1", x(max))
+              .attr("x2", x(max))
+              .attr("y1", yPos + height/3)
+              .attr("y2", yPos + 2*height/3)
               .attr("stroke", "black");
     });
   }
+
+  // Update the visualization update function
+  function updateVisualization() {
+    const activeTab = document.querySelector('.tab-button.active').dataset.tab;
+    const activePollutant = document.querySelector('.control-button.active').dataset.pollutant;
+
+    d3.csv("all_devices_merged.csv").then(data => {
+      switch(activeTab) {
+        case 'trends':
+          const config = pollutantConfig[activePollutant];
+          createLineChart("main-chart", data, config.external, config.internal,
+                  config.label, config.title, config.limits, config);
+          break;
+        case 'ventilation':
+          createViolinBoxPlot(data, ventilationPollutantConfig[activePollutant]);
+          break;
+        case 'patterns':
+          createHeatmap(data, pollutantConfig[activePollutant]);
+          break;
+      }
+    });
+  }
+
+  // Initial visualization
+  updateVisualization();
 
   document.querySelectorAll('.tab-button').forEach(button => {
     button.addEventListener('click', () => {
