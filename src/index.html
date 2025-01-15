@@ -167,9 +167,9 @@
   <div class="nav-container">
     <!-- Combined tabs and controls -->
     <div class="tab-buttons">
-      <button class="tab-button active" data-tab="trends">Internal vs. External Over Time</button>
-      <button class="tab-button" data-tab="ventilation">Ventilation Analysis</button>
-      <button class="tab-button" data-tab="patterns">Daily Patterns</button>
+      <button class="tab-button active" data-tab="trends">Indoor vs. Outdoor Air Trends</button>
+      <button class="tab-button" data-tab="ventilation">Indoor Air by Ventilation Method</button>
+      <button class="tab-button" data-tab="patterns">Outdoor Air Daily Patterns</button>
     </div>
 
     <div class="controls">
@@ -214,7 +214,7 @@
       external: "EXT_PM2.5",
       internal: ["PM2.5_DEVICE_1", "PM2.5_DEVICE_2", "PM2.5_DEVICE_3", "PM2.5_DEVICE_4", "PM2.5_DEVICE_5"],
       label: "PM2.5 (µg/m³)",
-      title: "PM2.5 Concentration",
+      title: "PM2.5",
       limits: { who: 15, who_yearly: 5 },  // Updated from who: 10, removed EU limit
       period: "24-hour"
     },
@@ -222,7 +222,7 @@
       external: "EXT_PM10",
       internal: ["PM10_DEVICE_1", "PM10_DEVICE_2", "PM10_DEVICE_3", "PM10_DEVICE_4", "PM10_DEVICE_5"],
       label: "PM10 (µg/m³)",
-      title: "PM10 Concentration",
+      title: "PM10",
       limits: { who: 45, who_yearly: 15 },  // Updated from who: 20, removed EU limit
       period: "24-hour"
     },
@@ -230,7 +230,7 @@
       external: "EXT_NO2",
       internal: ["NO2_DEVICE_1", "NO2_DEVICE_2", "NO2_DEVICE_3", "NO2_DEVICE_4", "NO2_DEVICE_5"],
       label: "NO₂ (µg/m³)",  // Changed from ppb
-      title: "NO₂ Concentration",
+      title: "NO₂",
       limits: { who: 25, who_yearly: 10 },  // Updated from who: 21
       period: "24-hour"  // Changed from 8-hour
     }
@@ -240,19 +240,19 @@
     pm25: {
       internal: ["PM2.5_DEVICE_1", "PM2.5_DEVICE_2", "PM2.5_DEVICE_3", "PM2.5_DEVICE_4", "PM2.5_DEVICE_5"],
       label: "PM2.5 (µg/m³)",
-      title: "PM2.5 Concentration",
+      title: "PM2.5",
       limits: { who: 15 }
     },
     pm10: {
       internal: ["PM10_DEVICE_1", "PM10_DEVICE_2", "PM10_DEVICE_3", "PM10_DEVICE_4", "PM10_DEVICE_5"],
       label: "PM10 (µg/m³)",
-      title: "PM10 Concentration",
+      title: "PM10",
       limits: { who: 45 }
     },
     no2: {
       internal: ["NO2_DEVICE_1", "NO2_DEVICE_2", "NO2_DEVICE_3", "NO2_DEVICE_4", "NO2_DEVICE_5"],
       label: "NO₂ (µg/m³)",
-      title: "NO₂ Concentration",
+      title: "NO₂",
       limits: { who: 25 }
     }
   };
@@ -274,12 +274,12 @@
     // Calculate averages
     const averages = [
       {
-        type: "External",
+        type: "Outdoor",
         value: d3.mean(processedData.map(d => d.external).filter(v => v !== null)),
         color: "#1b9e77"
       },
       {
-        type: "Internal",
+        type: "Indoor",
         value: d3.mean(processedData.map(d => d.internal).filter(v => v !== null)),
         color: "#7570b3"
       }
@@ -380,7 +380,7 @@
     d3.select("#" + svgId).selectAll("*").remove();
     d3.select("#bar-chart").selectAll("*").remove();
 
-    const fullChartTitle = `${chartTitle} (${config.period} rolling mean)`;
+    const fullChartTitle = `${chartTitle} Concentration (${config.period} Rolling Mean)`;
 
     // Keep original margins to maintain alignment
     const margin = {top: 40, right: 30, bottom: 100, left: 60};
@@ -558,7 +558,7 @@
                 if (value !== null) {
                   tooltip.style("opacity", 0.9)
                           .html(`Date: ${d.date.toLocaleDateString()}<br/>
-                            ${className === "external" ? "External" : "Internal"}: ${value.toFixed(2)} µg/m³`)
+                            ${className === "external" ? "Outdoor" : "Indoor"}: ${value.toFixed(2)} µg/m³`)
                           .style("left", (event.pageX + 10) + "px")
                           .style("top", (event.pageY - 28) + "px");
                 }
@@ -639,7 +639,7 @@
     legendItem1.append("text")
             .attr("x", 24)
             .attr("y", 12)
-            .text("External");
+            .text("Outdoor");
 
     // Internal legend item
     const legendItem2 = legendGroup.append("g")
@@ -653,7 +653,7 @@
     legendItem2.append("text")
             .attr("x", 24)
             .attr("y", 12)
-            .text("Internal");
+            .text("Indoor");
 
     // Missing data legend item
     const legendItem3 = legendGroup.append("g")
@@ -869,7 +869,7 @@
             .attr("y", -margin.top / 2)
             .attr("text-anchor", "middle")
             .style("font-size", "16px")
-            .text(`External ${config.title} by Time and Day`);
+            .text(`Outdoor Pollution by Time and Day: ${config.title}`);
   }
 
   function createViolinBoxPlot(data, config) {
@@ -877,7 +877,7 @@
     d3.select("#ventilation-chart").selectAll("*").remove();
 
     // Set up dimensions
-    const margin = {top: 50, right: 50, bottom: 80, left: 180};
+    const margin = {top: 50, right: 50, bottom: 80, left: 200};
     const width = 1200 - margin.left - margin.right;
     const height = 400 - margin.top - margin.bottom;
 
@@ -912,13 +912,15 @@
       });
     });
 
-    // Helper function to remove outliers
+    // Enhanced outlier removal function using Tukey's method with more stringent criteria
     function removeOutliers(arr) {
       if (arr.length === 0) return arr;
-      const q1 = d3.quantile(arr.sort(d3.ascending), 0.25);
-      const q3 = d3.quantile(arr.sort(d3.ascending), 0.75);
+      const sortedArr = arr.sort((a, b) => a - b);
+      const q1 = d3.quantile(sortedArr, 0.25);
+      const q3 = d3.quantile(sortedArr, 0.75);
       const iqr = q3 - q1;
-      const validRange = [q1 - 1.5 * iqr, q3 + 1.5 * iqr];
+      // Using 2.0 instead of 1.5 for a more conservative approach
+      const validRange = [q1 - 2.0 * iqr, q3 + 2.0 * iqr];
       return arr.filter(d => d >= validRange[0] && d <= validRange[1]);
     }
 
@@ -945,9 +947,11 @@
             .range([0, width])
             .domain([0, d3.max(allValues)]);
 
-    // Add Y axis (categories)
+    // Add Y axis with larger font
     svg.append("g")
-            .call(d3.axisLeft(y));
+            .call(d3.axisLeft(y))
+            .style("font-size", "14px")  // Increased font size
+            .selectAll("text")
 
     // Add X axis (values)
     svg.append("g")
@@ -967,7 +971,7 @@
             .attr("y", -margin.top / 2)
             .attr("text-anchor", "middle")
             .style("font-size", "16px")
-            .text(`${config.title} by Ventilation Method (duration ≥ ${MIN_DURATION}min)`);
+            .text(`Indoor Air Pollution by Ventilation Method: ${config.title}`);
 
     // Format numbers for tooltip
     const formatNumber = d3.format(".1f");
