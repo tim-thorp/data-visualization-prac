@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Air Quality Dashboard</title>
+  <title>Barcelona Air Quality</title>
   <style>
     .container {
       max-width: 1400px;
@@ -123,18 +123,19 @@
       border-radius: 4px;
       pointer-events: none;
       font-size: 12px;
+      z-index: 100;
     }
   </style>
   <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
 <div class="container">
-  <h1 style="text-align: center; margin-bottom: 30px;">Air Quality Dashboard</h1>
+  <h1 style="text-align: center; margin-bottom: 30px;">Barcelona Air Quality</h1>
 
   <div class="tab-container">
     <!-- Tab buttons -->
     <div class="tab-buttons">
-      <button class="tab-button active" data-tab="trends">Trends Over Time</button>
+      <button class="tab-button active" data-tab="trends">Internal vs. External Over Time</button>
       <button class="tab-button" data-tab="ventilation">Ventilation Analysis</button>
       <button class="tab-button" data-tab="patterns">Daily Patterns</button>
     </div>
@@ -276,7 +277,13 @@
             .domain([0, maxValue])
             .range([height, 0]);
 
-    // Add bars
+    // Create tooltip
+    const tooltip = d3.select("body")
+            .append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+
+    // Add bars with tooltip interactions
     svg.selectAll(".bar")
             .data(averages)
             .enter()
@@ -286,18 +293,20 @@
             .attr("y", d => y(d.value))
             .attr("width", x.bandwidth())
             .attr("height", d => height - y(d.value))
-            .attr("fill", d => d.color);
-
-    // Add value labels on top of bars
-    svg.selectAll(".bar-label")
-            .data(averages)
-            .enter()
-            .append("text")
-            .attr("class", "bar-label")
-            .attr("x", d => x(d.type) + x.bandwidth() / 2)
-            .attr("y", d => y(d.value) - 5)
-            .attr("text-anchor", "middle")
-            .text(d => d.value.toFixed(1));
+            .attr("fill", d => d.color)
+            .on("mouseover", function(event, d) {
+              tooltip.transition()
+                      .duration(200)
+                      .style("opacity", .9);
+              tooltip.html(`${d.type}: ${d.value.toFixed(1)} µg/m³`)
+                      .style("left", (event.pageX + 10) + "px")
+                      .style("top", (event.pageY - 28) + "px");
+            })
+            .on("mouseout", function() {
+              tooltip.transition()
+                      .duration(500)
+                      .style("opacity", 0);
+            });
 
     // Add Y axis
     svg.append("g")
@@ -324,7 +333,7 @@
             .attr("y", 0 - margin.top / 2)
             .attr("text-anchor", "middle")
             .style("font-size", "14px")
-            .text(`Mean Values`);
+            .text(`Overall Mean Values`);
 
     if (config.limits?.who_yearly) {
       // Add the horizontal line
@@ -713,8 +722,7 @@
                       .style("opacity", .9);
               tooltip.html(
                       `${d.day} ${d.hour}:00<br/>` +
-                      `Value: ${d.value.toFixed(2)} ${config.label}<br/>` +
-                      `Measurements: ${d.count}`
+                      `Value: ${d.value.toFixed(2)} µg/m³`
               )
                       .style("left", (event.pageX + 10) + "px")
                       .style("top", (event.pageY - 28) + "px");
