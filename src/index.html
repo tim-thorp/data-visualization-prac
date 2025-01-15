@@ -522,7 +522,7 @@
                 if (value !== null) {
                   tooltip.style("opacity", 0.9)
                           .html(`Date: ${d.date.toLocaleDateString()}<br/>
-                  ${className === "external" ? "External" : "Internal"}: ${value.toFixed(2)} ${yLabel}`)
+                  ${className === "external" ? "External" : "Internal"}: ${value.toFixed(2)} µg/m³`)
                           .style("left", (event.pageX + 10) + "px")
                           .style("top", (event.pageY - 28) + "px");
                 }
@@ -810,6 +810,15 @@
             .append("g")
             .attr("transform", `translate(${margin.left},${margin.top})`);
 
+    // Create tooltip
+    const tooltip = d3.select("body")
+            .append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 0);
+
+    // Helper function to format numbers
+    const formatNumber = d3.format(".1f");
+
     // Process data to get values for each device and ventilation type
     const MIN_DURATION = 30; // Minimum duration in minutes
     const ventData = {};
@@ -959,7 +968,7 @@
       const max = d3.max(combinedValues);
 
       // Draw box plot
-      // Box
+// Box
       svg.append("rect")
               .attr("x", xPos + width/4)
               .attr("y", y(q3))
@@ -967,33 +976,95 @@
               .attr("height", y(q1) - y(q3))
               .attr("stroke", "black")
               .attr("fill", "#7570b3")
-              .attr("opacity", 0.7);
+              .attr("opacity", 0.7)
+              .style("cursor", "pointer")
+              .on("mouseover", function(event) {
+                tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+                tooltip.html(`
+            Q1: ${formatNumber(q1)} µg/m³<br/>
+            Median: ${formatNumber(median)} µg/m³<br/>
+            Q3: ${formatNumber(q3)} µg/m³<br/>
+          `)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+              })
+              .on("mouseout", function() {
+                tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+              });
 
-      // Median line
+// Median line with tooltip
       svg.append("line")
               .attr("x1", xPos + width/4)
               .attr("x2", xPos + 3*width/4)
               .attr("y1", y(median))
               .attr("y2", y(median))
               .attr("stroke", "black")
-              .attr("stroke-width", 2);
+              .attr("stroke-width", 2)
+              .style("cursor", "pointer")
+              .on("mouseover", function(event) {
+                tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+                tooltip.html(`Median: ${formatNumber(median)} µg/m³`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+              })
+              .on("mouseout", function() {
+                tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+              });
 
-      // Whiskers
+// Whiskers with tooltips
+// Lower whisker
       svg.append("line")
               .attr("x1", xPos + width/2)
               .attr("x2", xPos + width/2)
               .attr("y1", y(min))
               .attr("y2", y(q1))
-              .attr("stroke", "black");
+              .attr("stroke", "black")
+              .style("cursor", "pointer")
+              .on("mouseover", function(event) {
+                tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+                tooltip.html(`Min: ${formatNumber(min)} µg/m³`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+              })
+              .on("mouseout", function() {
+                tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+              });
 
+// Upper whisker
       svg.append("line")
               .attr("x1", xPos + width/2)
               .attr("x2", xPos + width/2)
               .attr("y1", y(q3))
               .attr("y2", y(max))
-              .attr("stroke", "black");
+              .attr("stroke", "black")
+              .style("cursor", "pointer")
+              .on("mouseover", function(event) {
+                tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+                tooltip.html(`Max: ${formatNumber(max)} µg/m³`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+              })
+              .on("mouseout", function() {
+                tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+              });
 
-      // Whisker ends
+// Whisker ends
       svg.append("line")
               .attr("x1", xPos + width/4)
               .attr("x2", xPos + 3*width/4)
